@@ -134,7 +134,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [~] Secrets : configuration TEMPORAIRE (`PUBLIC_APP_URL=http://localhost:3000`, `ALLOWED_ORIGINS` non défini = toutes origines) — à remplacer par l'adresse Vercel du front
 - [x] `supabase functions deploy api` — https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api (health OK)
 - [x] Vérifier que pg_cron est actif et que le bucket Storage existe en production (2 tâches actives, bucket event-covers, 0 droit d'écriture directe)
-- [ ] Désactiver l'inscription publique dans le tableau de bord (Auth > Sign In / Providers > « Allow new users to sign up » : NON) — équivalent de `enable_signup = false`
+- [x] Désactiver l'inscription publique dans le tableau de bord — vérifié : inscription directe → 422 signup_disabled, inscription via l'API → 201 (Auth > Sign In / Providers > « Allow new users to sign up » : NON) — équivalent de `enable_signup = false`
 - [x] Seed de démo en production (mot de passe généré, non par défaut) — accès documentés dans le README et .env.production.local
 - [x] Test de charge en production : 139 scans/min (4 agents), 149/149 HTTP 200, médiane 774 ms et p95 1,2 s depuis Cotonou (réseau compris), dashboard 0 erreur, synchro 100 scans en 1,7 s, 0 double entrée ✔
 - [x] Tests en production : 55/55 (49 au 1er passage ; 6 échecs dus au pare-feu Cloudflare, au cache par instance, à une coupure DNS et à un test trop lent — tests ajustés puis relancés : 13/13). Données de test supprimées

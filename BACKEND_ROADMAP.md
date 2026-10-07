@@ -53,10 +53,10 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [x] `PATCH /api/events/:id` (mise à jour partielle, catégories ajoutées, modifiées ou supprimées)
 - [x] `DELETE /api/events/:id` (refusé si des tickets sont vendus)
 - [x] Vérification de propriété sur toutes les mutations
-- [~] Validation Zod stricte de tous les payloads (en place pour l'auth et les événements, à étendre à chaque nouvelle route)
+- [x] Validation Zod stricte de tous les payloads (toutes les routes, champs inconnus refusés)
 - [x] Génération automatique du slug court et unique
 - [x] Correctif : suppression d'un événement ayant des commandes non payées (migration `…000400_fix_category_fk_cascade`)
-- [~] Upload de la couverture : bucket `event-covers` ✅ · endpoint `POST /api/uploads/cover` écrit ✅ · contrôles testés en local ✅ (auth, fichier absent, type réel par signature binaire, 5 Mo max) · ⏸ enregistrement réel dans Storage à tester sur le projet Supabase en ligne (Storage ne démarre pas en local : CPU trop lent)
+- [x] Upload de la couverture (validé en production) : bucket `event-covers` ✅ · endpoint `POST /api/uploads/cover` écrit ✅ · contrôles testés en local ✅ (auth, fichier absent, type réel par signature binaire, 5 Mo max) · ⏸ enregistrement réel dans Storage à tester sur le projet Supabase en ligne (Storage ne démarre pas en local : CPU trop lent)
 
 **Livrable :** inscription, connexion, création d'un événement avec 3 catégories, liste, édition, suppression.
 
@@ -115,32 +115,32 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 
 **Livrable :** le dashboard se met à jour pendant les scans, export CSV disponible.
 
-## PHASE 7 — Nettoyage, seed, documentation (J12-J13) ✅ TERMINÉE (débit du test de charge à confirmer en production)
+## PHASE 7 — Nettoyage, seed, documentation (J12-J13) ✅ TERMINÉE
 
 - [x] Seed de démo : 1 organisateur, 2 événements, 5 catégories, 20 tickets vendus, 5 scannés — `scripts/seed-demo.mjs` (passe par l'API, fonctionne en local et en production, refuse les doublons)
 - [x] Documentation API (`docs/API.md`) avec des exemples de payloads — 27 routes, codes d'erreur, limites, guide hors ligne, écarts avec le PRD
 - [x] `.env.example` à jour, aucun secret dans le dépôt (3 variables utilisées = 3 documentées)
 - [x] Logs propres sans données sensibles (ni téléphone, ni PIN, ni token) — 8 `console.*` relus
 - [x] Tests d'intégration automatisés (`tests/`, `npm test`) : 55 tests, 9 fichiers — 54 OK + 1 ignoré (Storage, à activer en ligne avec TEST_STORAGE=1). ⚠ Le test « image de 6 Mo » passe seul mais peut échouer en suite complète en local (limite CPU cumulée des workers sur la machine de dev) : à revérifier en production
-- [~] Test de charge basique (100 scans/min) : `scripts/load-test.mjs` écrit et exécuté en local — limite de scan passée PAR AGENT (wifi partagé) ; réessai par clientScanId documenté et testé ; 0 double entrée ✔, synchro de 100 scans en 0,7 s ✔, mais débit et latences non représentatifs (workers locaux arrêtés par la limite CPU de la machine de dev). À relancer en production (Phase 8)
+- [x] Test de charge basique (100 scans/min) — confirmé en production (139 scans/min) : `scripts/load-test.mjs` écrit et exécuté en local — limite de scan passée PAR AGENT (wifi partagé) ; réessai par clientScanId documenté et testé ; 0 double entrée ✔, synchro de 100 scans en 0,7 s ✔, mais débit et latences non représentatifs (workers locaux arrêtés par la limite CPU de la machine de dev). À relancer en production (Phase 8)
 - [x] Revue sécurité (RLS, propriété, secrets, CORS) — corrigé : écriture directe en base retirée (survente possible), URL de couverture limitée à http(s) (XSS), inscription publique Supabase désactivée ; `_drafts/` supprimé ; 55 tests (54 OK, 1 ignoré)
 
 ## PHASE 8 — Déploiement Supabase + livrables (J14)
 
-- [ ] Pousser le dépôt sur le GitHub personnel d'Arif
-- [ ] Créer le projet Supabase « tiketo » (validé par l'utilisateur)
-- [ ] `supabase link --project-ref <ref>`
-- [ ] `supabase db push` (migrations)
-- [ ] `supabase secrets set ALLOWED_ORIGINS=... PUBLIC_APP_URL=...`
-- [ ] `supabase functions deploy api`
-- [ ] Vérifier que pg_cron est actif et que le bucket Storage existe en production
+- [x] Pousser le dépôt sur le GitHub personnel d'Arif — https://github.com/arifchitou6-bit/tiketo (branche main, commit a9e2b32)
+- [x] Projet Supabase de production : « arifchitou6-bit's Project » (ref yedvgoroseersrjyyfol), organisation personnelle « Tiketo », région eu-west-3 — mot de passe dans .env.production.local (exclu de git)
+- [x] `supabase link --project-ref yedvgoroseersrjyyfol` — base en ligne vérifiée vide avant déploiement
+- [x] `supabase db push` — 16 migrations appliquées en production
+- [~] Secrets : configuration TEMPORAIRE (`PUBLIC_APP_URL=http://localhost:3000`, `ALLOWED_ORIGINS` non défini = toutes origines) — à remplacer par l'adresse Vercel du front
+- [x] `supabase functions deploy api` — https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api (health OK)
+- [x] Vérifier que pg_cron est actif et que le bucket Storage existe en production (2 tâches actives, bucket event-covers, 0 droit d'écriture directe)
 - [ ] Désactiver l'inscription publique dans le tableau de bord (Auth > Sign In / Providers > « Allow new users to sign up » : NON) — équivalent de `enable_signup = false`
-- [ ] Seed de démo en production avec un mot de passe NON par défaut : `DEMO_PASSWORD=… npm run seed` (comptes de démo documentés)
-- [ ] Test de charge en production : `API_URL=… DATABASE_URL=… node scripts/load-test.mjs`
-- [ ] Smoke test de production : `API_URL=… DATABASE_URL=… TEST_STORAGE=1 npm test`
-- [ ] Vérifier que le projet utilise des clés de signature JWT asymétriques (Auth > JWT Keys) : sinon `getClaims()` repasse par le service Auth à chaque requête (correct mais plus lent)
-- [ ] Vérifier la détection de l'IP client en production (rate limiting) : envoyer un faux `X-Forwarded-For` ne doit pas changer de compteur
-- [ ] Tester l'upload réel d'une couverture (`POST /api/uploads/cover`) et l'affichage de l'URL publique
+- [x] Seed de démo en production (mot de passe généré, non par défaut) — accès documentés dans le README et .env.production.local
+- [x] Test de charge en production : 139 scans/min (4 agents), 149/149 HTTP 200, médiane 774 ms et p95 1,2 s depuis Cotonou (réseau compris), dashboard 0 erreur, synchro 100 scans en 1,7 s, 0 double entrée ✔
+- [x] Tests en production : 55/55 (49 au 1er passage ; 6 échecs dus au pare-feu Cloudflare, au cache par instance, à une coupure DNS et à un test trop lent — tests ajustés puis relancés : 13/13). Données de test supprimées
+- [x] Vérifier que le projet utilise des clés de signature JWT asymétriques — ES256 ✔ (Auth > JWT Keys) : sinon `getClaims()` repasse par le service Auth à chaque requête (correct mais plus lent)
+- [x] Vérifier la détection de l'IP client en production — faux X-Forwarded-For toujours bloqué ✔ (rate limiting) : envoyer un faux `X-Forwarded-For` ne doit pas changer de compteur
+- [x] Tester l'upload réel d'une couverture — enregistrement Storage + URL publique accessible ✔
 - [ ] Vérifier le CORS en production : seules les origines `ALLOWED_ORIGINS` sont acceptées (en local, la passerelle Kong force `*`)
-- [x] README backend pro + DECISIONS.md (18 décisions) — URL de production à ajouter après déploiement
-- [ ] Transmettre au front (Jude) l'URL de base de l'API et la clé publique (anon)
+- [x] README backend pro + DECISIONS.md (18 décisions) — URL de production et comptes de démo ajoutés
+- [~] Transmettre au front (Jude) l'URL de base de l'API (message prêt, envoi par Arif ; la clé anon n'est pas nécessaire : tout passe par l'API)

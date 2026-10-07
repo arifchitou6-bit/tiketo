@@ -62,7 +62,9 @@ describe("Limite du scan comptée par agent (et non par IP)", () => {
 
     const scan = (token) => api("POST", "/scan", { token, body: { qrPayload: "QR-de-test", deviceId: "d" } });
     const statusesA = [];
-    for (let i = 0; i < 101; i++) statusesA.push((await scan(agentA.token)).status);
+    // Envoi par paquets parallèles : les 101 scans doivent tenir dans la même minute, même à ~1 s par requête
+    for (let i = 0; i < 100; i += 20) statusesA.push(...(await Promise.all(Array.from({ length: 20 }, () => scan(agentA.token)))).map((r) => r.status));
+    statusesA.push((await scan(agentA.token)).status);
     assert.equal(statusesA.filter((s) => s === 200).length, 100);
     assert.equal(statusesA[100], 429, "le 101e scan de l'agent A est bloqué");
     assert.equal((await scan(agentB)).status, 200, "l'agent B, même IP, n'est pas bloqué");

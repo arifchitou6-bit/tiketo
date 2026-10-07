@@ -6,6 +6,26 @@ Ce dépôt contient le **backend complet**, déployé sur **Supabase** : base Po
 
 > Projet portfolio de l'agence **WANE** — Back-end : Arif · Front-end : Jude
 
+## 🌍 En ligne
+
+| | |
+|---|---|
+| **API (production)** | `https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api` |
+| Vérification | [`/health`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/health) |
+| Documentation | [docs/API.md](docs/API.md) |
+
+**Comptes de démonstration (production)**
+
+| Rôle | Accès |
+|---|---|
+| Organisateur | `demo@ticketo.bj` / `Demo-rL8LuShU-2026` |
+| Agent de porte — Afro Night Cotonou | code `X3RSGG` · PIN `4097` |
+| Agent de porte — Jazz sous les étoiles | code `93395Z` · PIN `1315` |
+| Page publique (API) | [`/public/events/afro-night-cotonou-3hhi`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/afro-night-cotonou-3hhi) · [`/public/events/jazz-sous-les-etoiles-u8u5`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/jazz-sous-les-etoiles-u8u5) |
+| Commande payée (écran de succès) | [`/orders/490879ed-0632-4f4f-963c-28c971e025c9`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/orders/490879ed-0632-4f4f-963c-28c971e025c9) |
+
+Validé en production : 55/55 tests d'intégration · test de charge à **139 scans/min** (4 agents en parallèle, 0 erreur, 0 double entrée, p95 ≈ 1,2 s depuis Cotonou, réseau compris).
+
 ---
 
 ## Sommaire

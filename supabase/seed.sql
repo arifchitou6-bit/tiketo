@@ -1,0 +1,1 @@
+-- TICKETO — seed local (vide en Phase 0, complété en Phase 7)

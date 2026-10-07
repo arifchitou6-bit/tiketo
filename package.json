@@ -1,0 +1,19 @@
+{
+  "name": "ticketo-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TICKETO — backend Supabase (Postgres, Auth, Storage, Edge Function api)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.mjs\"",
+    "seed": "node scripts/seed-demo.mjs"
+  },
+  "devDependencies": {
+    "jsqr": "^1.4.0",
+    "pg": "^8.23.1",
+    "pngjs": "^7.0.0"
+  }
+}

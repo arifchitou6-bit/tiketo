@@ -53,6 +53,26 @@ describe("Liste et recherche publique", () => {
     assert.deepEqual((await list({ q: `elegance ${TAG.toUpperCase()}` })).body.events.map((e) => e.id), [ev.concert.id]);
     assert.deepEqual((await list({ q: `${TAG} lome` })).body.events.map((e) => e.id), [ev.lome.id]);
     assert.deepEqual((await list({ q: `${TAG} introuvable` })).body.events, []);
+    // La description n'est pas cherchée (PRD v2.1 §8.1)
+    await api("PATCH", `/events/${ev.soiree.id}`, { token: orga.token, body: { description: "motcachedansladescription" } });
+    assert.deepEqual((await list({ q: `${TAG} motcachedansladescription` })).body.events, []);
+  });
+
+  test("20 événements par page par défaut", async () => {
+    const r = await list({});
+    assert.ok(r.body.events.length <= 20);
+  });
+
+  test("popular : à likes égaux, le plus vendu d'abord, puis le plus proche", async () => {
+    const t2 = `pp${Date.now().toString(36)}`; // mot-clé distinct : ces événements ne doivent pas apparaître dans les autres tests
+    const tot = await createPublishedEvent(orga.token, { name: `Tôt ${t2}`, ...at(6) });
+    const vendu = await createPublishedEvent(orga.token, { name: `Vendu ${t2}`, ...at(8) });
+    const tard = await createPublishedEvent(orga.token, { name: `Tard ${t2}`, ...at(9) });
+    await sql("update ticket_categories set sold = 7 where event_id = $1 and position = 0", [vendu.id]);
+    const r = await list({ q: t2, sort: "popular", limit: 2 });
+    assert.deepEqual(r.body.events.map((e) => e.id), [vendu.id, tot.id]);
+    const p2 = await list({ q: t2, sort: "popular", limit: 2, cursor: r.body.nextCursor });
+    assert.deepEqual(p2.body.events.map((e) => e.id), [tard.id], "pagination cohérente avec le second critère");
   });
 
   test("filtres catégorie et pays ; paramètres vides ignorés", async () => {
@@ -60,7 +80,7 @@ describe("Liste et recherche publique", () => {
     assert.deepEqual((await list({ q: TAG, country: "bj" })).body.events.map((e) => e.id), [ev.soiree.id, ev.concert.id]);
     assert.equal((await list({ q: TAG, category: "", country: "", cursor: "", sort: "" })).body.events.length, 3);
     for (const [params, field] of [[{ category: "KARAOKE" }, "category"], [{ sort: "prix" }, "sort"], [{ limit: "500" }, "limit"],
-      [{ country: "BEN" }, "country"], [{ cursor: "nimporte-quoi" }, "cursor"]]) {
+      [{ country: "BEN" }, "country"], [{ country: "TG" }, "country"], [{ cursor: "nimporte-quoi" }, "cursor"]]) {
       const r = await list(params);
       assert.equal(r.status, 400, JSON.stringify(params));
       assert.equal(r.body.error.field, field);
@@ -108,6 +128,19 @@ describe("Liste et recherche publique", () => {
     assert.deepEqual(r.body, { liked: false, likesCount: 1 });
     r = await api("DELETE", `/public/events/${ev.lome.slug}/like`, { body: { deviceId: "appareil-B-0002" } });
     assert.deepEqual(r.body, { liked: false, likesCount: 1 }, "idempotent");
+  });
+
+  test("GET /public/likes : slugs aimés par l'appareil", async () => {
+    await resetRateLimits();
+    await api("POST", `/public/events/${ev.soiree.slug}/like`, { body: { deviceId: "appareil-L-0009" } });
+    await api("POST", `/public/events/${ev.concert.slug}/like`, { body: { deviceId: "appareil-L-0009" } });
+    const r = await api("GET", "/public/likes?deviceId=appareil-L-0009");
+    assert.equal(r.status, 200);
+    assert.deepEqual(new Set(r.body.slugs), new Set([ev.soiree.slug, ev.concert.slug]));
+    assert.equal(r.headers.get("cache-control"), "private, no-store");
+    assert.deepEqual((await api("GET", "/public/likes?deviceId=appareil-vide-0001")).body, { slugs: [] });
+    assert.equal((await api("GET", "/public/likes")).status, 400);
+    for (const slug of [ev.soiree.slug, ev.concert.slug]) await api("DELETE", `/public/events/${slug}/like?deviceId=appareil-L-0009`);
   });
 
   test("likes refusés : brouillon ou inconnu (404), deviceId invalide (400)", async () => {

@@ -13,6 +13,12 @@ import { parseJson } from "../lib/validation.ts";
 // --- Validation --------------------------------------------------------------
 
 export const EVENT_CATEGORIES = ["CONCERT", "SOIREE", "FESTIVAL", "CONFERENCE", "THEATRE", "EXPOSITION"] as const;
+// Pays couverts (PRD v2.1 §7) et fuseau horaire par défaut de chacun
+export const EVENT_COUNTRIES = ["BJ", "CI"] as const;
+export const COUNTRY_TIME_ZONES: Record<(typeof EVENT_COUNTRIES)[number], string> = {
+  BJ: "Africa/Porto-Novo",
+  CI: "Africa/Abidjan",
+};
 
 // Fuseau IANA reconnu par le moteur (Intl lève une erreur sinon)
 function isTimeZone(tz: string) {

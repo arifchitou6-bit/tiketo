@@ -9,7 +9,7 @@ import { rateLimit } from "../lib/rateLimit.ts";
 import { admin } from "../lib/supabase.ts";
 import type { AppEnv } from "../lib/types.ts";
 import { parseJson } from "../lib/validation.ts";
-import { EVENT_CATEGORIES } from "./events.ts";
+import { EVENT_CATEGORIES, EVENT_COUNTRIES } from "./events.ts";
 
 const CACHE_SECONDS = 30;
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -81,7 +81,8 @@ const deviceIdSchema = z.string({ required_error: "deviceId est requis" }).regex
 // --- Curseur de pagination : jeton opaque (JSON en base64url) ------------------
 
 type Sort = "date" | "popular";
-interface Cursor { o: Sort; s: string; id: string; l: number }
+// s, id : date et identifiant ; l, v : likes et tickets vendus (tri « popular »)
+interface Cursor { o: Sort; s: string; id: string; l: number; v?: number }
 
 const encodeCursor = (sort: Sort, next: Omit<Cursor, "o">) =>
   btoa(JSON.stringify({ o: sort, ...next })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -92,6 +93,7 @@ function decodeCursor(raw: string, sort: Sort): Cursor {
     const c = JSON.parse(atob(raw.replace(/-/g, "+").replace(/_/g, "/"))) as Cursor;
     if (c.o !== sort) throw invalid; // curseur obtenu avec un autre tri
     if (Number.isNaN(Date.parse(c.s)) || !/^[0-9a-f-]{36}$/i.test(c.id) || !Number.isInteger(c.l)) throw invalid;
+    if (c.v !== undefined && !Number.isInteger(c.v)) throw invalid;
     return c;
   } catch {
     throw invalid;
@@ -103,10 +105,12 @@ const listQuerySchema = z.object({
   category: z.enum(EVENT_CATEGORIES, {
     errorMap: () => ({ message: `Catégorie invalide (${EVENT_CATEGORIES.join(", ")})` }),
   }).optional(),
-  country: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Code pays ISO à 2 lettres attendu (ex. BJ)").optional(),
+  country: z.string().trim().toUpperCase().pipe(z.enum(EVENT_COUNTRIES, {
+    errorMap: () => ({ message: `Pays invalide (${EVENT_COUNTRIES.join(" ou ")})` }),
+  })).optional(),
   sort: z.enum(["date", "popular"], { errorMap: () => ({ message: "sort : « date » ou « popular »" }) }).default("date"),
   cursor: z.string().max(500).optional(),
-  limit: z.coerce.number().int().min(1, "limit doit être ≥ 1").max(50, "limit maximum : 50").default(12),
+  limit: z.coerce.number().int().min(1, "limit doit être ≥ 1").max(50, "limit maximum : 50").default(20),
   deviceId: deviceIdSchema.optional(),
 });
 
@@ -173,6 +177,16 @@ publicRoutes.get("/events/:slug", async (c) => {
 
   c.header("Cache-Control", `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=${CACHE_SECONDS}`);
   return c.json(body);
+});
+
+// Événements aimés par l'appareil (et par l'acheteur connecté) : cœurs pleins sur l'accueil
+publicRoutes.get("/likes", optionalBuyer, async (c) => {
+  const valid = deviceIdSchema.safeParse(c.req.query("deviceId"));
+  if (!valid.success) throw new ApiError(400, "VALIDATION_ERROR", valid.error.issues[0].message, "deviceId");
+  const { data, error } = await admin.rpc("liked_slugs", { p_device_id: valid.data, p_buyer_id: c.get("buyer")?.buyerId ?? null });
+  if (error) throw fromDbError(error);
+  c.header("Cache-Control", "private, no-store");
+  return c.json({ slugs: data });
 });
 
 // Like / unlike : un par appareil, idempotent. deviceId dans le corps JSON (ou ?deviceId= pour DELETE,

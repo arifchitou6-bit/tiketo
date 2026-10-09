@@ -151,7 +151,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 
 - [x] Affiches des événements de démo — 2 photos libres de droits (CC0) dans `scripts/assets/`, envoyées par le seed via `/uploads/cover`
 - [x] Remise à zéro automatique de la démo — migration `20261009000100_demo_reset.sql` : photo de référence (`demo_snapshot`) + restauration à l'identique chaque nuit à 3 h (Cotonou) par pg_cron (`demo_reset`), dates décalées par semaines entières pour rester à venir ; testé en local (vandalisme → restauration identique)
-- [ ] Production : appliquer la migration, poser les affiches sur les 2 événements, prendre la photo de référence (`npm run demo:snapshot`), vérifier la tâche pg_cron
+- [x] Production : migration appliquée, affiches posées sur les 2 événements (images publiques HTTP 200), photo de référence prise, tâche pg_cron `ticketo-demo-reset` active (0 2 * * * UTC) ; remise à zéro lancée une fois : 20 tickets, QR identiques, connexion staff X3RSGG OK
 
 **Dépend du PRD v2 (en attente du document de Jude)**
 

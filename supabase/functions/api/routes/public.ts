@@ -16,7 +16,7 @@ const memoryCache = new Map<string, { expires: number; body: unknown }>();
 async function loadPublicEvent(slug: string) {
   const { data: event, error } = await admin
     .from("events")
-    .select("id, slug, name, description, cover_image_url, venue, city, starts_at, ends_at, status")
+    .select("id, slug, name, description, category, cover_image_url, cover_fit, venue, city, country, time_zone, starts_at, ends_at, status, likes_count")
     .eq("slug", slug)
     .in("status", ["PUBLISHED", "CLOSED"])
     .maybeSingle();
@@ -25,14 +25,14 @@ async function loadPublicEvent(slug: string) {
 
   const { data: cats, error: catError } = await admin
     .from("ticket_categories")
-    .select("id, name, price_fcfa, quantity, sold")
+    .select("id, name, description, price_fcfa, quantity, sold")
     .eq("event_id", event.id)
     .order("position");
   if (catError) throw fromDbError(catError);
 
   const categories = (cats ?? []).map((c) => {
     const remaining = Math.max(c.quantity - c.sold, 0);
-    return { id: c.id, name: c.name, priceFcfa: c.price_fcfa, remaining, isSoldOut: remaining === 0 };
+    return { id: c.id, name: c.name, description: c.description, priceFcfa: c.price_fcfa, remaining, isSoldOut: remaining === 0 };
   });
   const isPast = new Date(event.ends_at).getTime() <= Date.now();
   const isSoldOut = categories.length > 0 && categories.every((c) => c.isSoldOut);
@@ -45,12 +45,17 @@ async function loadPublicEvent(slug: string) {
       slug: event.slug,
       name: event.name,
       description: event.description,
+      category: event.category,
       coverImageUrl: event.cover_image_url,
+      coverFit: event.cover_fit,
       venue: event.venue,
       city: event.city,
+      country: event.country,
+      timeZone: event.time_zone,
       startsAt: event.starts_at,
       endsAt: event.ends_at,
       status: event.status,
+      likesCount: event.likes_count,
       isPast,
       isSoldOut,
       isSalesOpen: event.status === "PUBLISHED" && !isPast && !isSoldOut,

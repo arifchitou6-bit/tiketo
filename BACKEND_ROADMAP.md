@@ -155,7 +155,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 
 **Dépend du PRD v2 (en attente du document de Jude)**
 
-- [ ] Base de données : `category`, `country`, `timeZone`, `coverFit` (événement), `description` (catégorie), likes
+- [x] Base de données : `category` (6 valeurs, défaut SOIREE), `country` (ISO 2 lettres, défaut BJ), `timeZone` (IANA, défaut Africa/Porto-Novo), `coverFit` (cover|contain), `description` des catégories (300 car.), table `event_likes` + `likesCount` — migration `20261009000200_event_fields_v2.sql`, champs dans la création/modification, le détail organisateur, la liste et la page publique ; photo de la démo complétée ; 4 tests ajoutés, 59/59 en local. Production : à déployer
 - [ ] `GET /public/events` : recherche, filtres, tri, pagination par curseur, `likesCount` ; `POST`/`DELETE /public/events/:slug/like`
 - [ ] Compte acheteur par code e-mail (OTP) : `/buyer/otp/request`, `/buyer/otp/verify`, `/buyer/me`, `/buyer/logout`, `/buyer/orders`, `/buyer/favorites` — service d'envoi d'e-mails à choisir
 - [ ] Tests des nouveautés + non-régression des 55 tests

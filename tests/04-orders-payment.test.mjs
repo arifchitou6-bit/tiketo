@@ -120,6 +120,6 @@ describe("Commandes et paiement simulé", () => {
     assert.equal(rows.find((x) => x.id === old.id).status, "FAILED");
     assert.equal(rows.find((x) => x.id === recent.id).status, "PENDING");
     const jobs = await sql("select jobname from cron.job where jobname like 'ticketo-%' and active order by 1");
-    assert.deepEqual(jobs.map((j) => j.jobname), ["ticketo-cleanup", "ticketo-expire-pending-orders"]);
+    assert.deepEqual(jobs.map((j) => j.jobname), ["ticketo-cleanup", "ticketo-demo-reset", "ticketo-expire-pending-orders"]);
   });
 });

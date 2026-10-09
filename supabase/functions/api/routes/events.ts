@@ -12,6 +12,18 @@ import { parseJson } from "../lib/validation.ts";
 
 // --- Validation --------------------------------------------------------------
 
+export const EVENT_CATEGORIES = ["CONCERT", "SOIREE", "FESTIVAL", "CONFERENCE", "THEATRE", "EXPOSITION"] as const;
+
+// Fuseau IANA reconnu par le moteur (Intl lève une erreur sinon)
+function isTimeZone(tz: string) {
+  try {
+    new Intl.DateTimeFormat("fr-FR", { timeZone: tz });
+    return tz.includes("/") || tz === "UTC";
+  } catch {
+    return false;
+  }
+}
+
 const isoDate = z
   .string({ required_error: "La date est requise" })
   .datetime({ offset: true, message: "Date au format ISO 8601 attendue (ex. 2026-12-31T20:00:00Z)" });
@@ -23,6 +35,7 @@ const categoryFields = {
     .int("Le prix doit être un entier en FCFA").min(0, "Le prix ne peut pas être négatif").max(10_000_000, "Prix trop élevé"),
   quantity: z.number({ required_error: "La quantité est requise", invalid_type_error: "La quantité doit être un nombre" })
     .int("La quantité doit être un entier").min(1, "Au moins 1 ticket").max(100_000, "100 000 tickets maximum"),
+  description: z.string().trim().max(300, "300 caractères maximum").optional(),
 };
 
 const newCategorySchema = z.object(categoryFields).strict();
@@ -43,6 +56,12 @@ const eventFields = {
   // http(s) uniquement : "javascript:" ou "data:" permettraient d'injecter du code chez les acheteurs (XSS)
   coverImageUrl: z.string().url("URL d'image invalide").max(2048)
     .refine((u) => /^https?:\/\//i.test(u), "L'URL de l'image doit commencer par https://").nullable(),
+  category: z.enum(EVENT_CATEGORIES, {
+    errorMap: () => ({ message: `Catégorie invalide (${EVENT_CATEGORIES.join(", ")})` }),
+  }),
+  country: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Code pays ISO à 2 lettres attendu (ex. BJ)"),
+  timeZone: z.string().trim().max(64).refine(isTimeZone, "Fuseau horaire invalide (ex. Africa/Porto-Novo)"),
+  coverFit: z.enum(["cover", "contain"], { errorMap: () => ({ message: "coverFit : « cover » ou « contain »" }) }),
 };
 
 const createEventSchema = z
@@ -50,6 +69,10 @@ const createEventSchema = z
     ...eventFields,
     description: eventFields.description.default(""),
     coverImageUrl: eventFields.coverImageUrl.optional(),
+    category: eventFields.category.optional(),
+    country: eventFields.country.optional(),
+    timeZone: eventFields.timeZone.optional(),
+    coverFit: eventFields.coverFit.optional(),
     categories: z.array(newCategorySchema, { required_error: "Au moins une catégorie est requise" })
       .min(1, "Au moins une catégorie est requise").max(10, "10 catégories maximum")
       .refine(uniqueNames, "Deux catégories ne peuvent pas avoir le même nom"),
@@ -97,7 +120,7 @@ async function loadEventDetail(id: string, organizerId: string) {
   const event = await getOwnedEvent(id, organizerId);
 
   const [categories, revenue, scanned] = await Promise.all([
-    admin.from("ticket_categories").select("id, name, price_fcfa, quantity, sold, position")
+    admin.from("ticket_categories").select("id, name, description, price_fcfa, quantity, sold, position")
       .eq("event_id", id).order("position"),
     admin.from("orders").select("total_amount").eq("event_id", id).eq("status", "PAID"),
     admin.from("tickets").select("id", { count: "exact", head: true }).eq("event_id", id).eq("status", "SCANNED"),
@@ -107,6 +130,7 @@ async function loadEventDetail(id: string, organizerId: string) {
   const cats = (categories.data ?? []).map((c) => ({
     id: c.id,
     name: c.name,
+    description: c.description,
     priceFcfa: c.price_fcfa,
     quantity: c.quantity,
     sold: c.sold,
@@ -120,12 +144,17 @@ async function loadEventDetail(id: string, organizerId: string) {
     slug: event.slug,
     name: event.name,
     description: event.description,
+    category: event.category,
     coverImageUrl: event.cover_image_url,
+    coverFit: event.cover_fit,
     venue: event.venue,
     city: event.city,
+    country: event.country,
+    timeZone: event.time_zone,
     startsAt: event.starts_at,
     endsAt: event.ends_at,
     status: event.status,
+    likesCount: event.likes_count,
     staffCode: event.staff_code,
     publishedAt: event.published_at,
     createdAt: event.created_at,

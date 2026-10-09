@@ -385,17 +385,17 @@ Puis envoyer `url` dans `coverImageUrl` (création ou `PATCH`). Erreurs : `400` 
 
 ### 4.5 Pages publiques
 
-#### `GET /public/events?q=&category=&country=&sort=date&cursor=&limit=12&deviceId=` 🌐 — accueil et recherche
+#### `GET /public/events?q=&category=&country=&sort=date&cursor=&limit=20&deviceId=` 🌐 — accueil et recherche
 
 Événements **publiés et non terminés** (ceux en cours restent visibles). Tous les paramètres sont optionnels ; un paramètre vide (`?q=&category=`) est ignoré.
 
 | Paramètre | Règle |
 |---|---|
-| `q` | recherche dans le nom, la description, le lieu et la ville ; **insensible aux accents et à la casse** ; tous les mots doivent être présents (`soiree cotonou` trouve « Soirée … » à Cotonou) ; 100 caractères max |
+| `q` | recherche dans le **nom, le lieu et la ville** ; **insensible aux accents et à la casse** ; tous les mots doivent être présents (`afro cotonou` trouve « Afro Night » à Cotonou) ; 100 caractères max |
 | `category` | une des 6 catégories (`CONCERT`, `SOIREE`…) |
-| `country` | code pays à 2 lettres (`BJ`) |
-| `sort` | `date` (défaut : le plus proche d'abord) ou `popular` (le plus de likes d'abord, puis par date) |
-| `limit` | 1 à 50 (défaut 12) |
+| `country` | `BJ` ou `CI` |
+| `sort` | `date` (défaut : le plus proche d'abord) ou `popular` (le plus de likes d'abord, puis le plus de **tickets vendus**, puis par date) |
+| `limit` | 1 à 50 (défaut 20) |
 | `cursor` | valeur `nextCursor` de la page précédente, **à renvoyer telle quelle avec les mêmes filtres et le même tri** |
 | `deviceId` | optionnel : ajoute `isLiked` à chaque événement (voir likes ci-dessous) |
 
@@ -444,6 +444,10 @@ Avec `?deviceId=…`, la réponse contient aussi `"isLiked": true|false` et elle
 | `categories[].remaining` | Quantité max du sélecteur |
 
 Brouillon ou slug inconnu → `404`. Aucune donnée organisateur ni chiffre de vente. Mis en cache 30 s (`Cache-Control: public, max-age=30`) : `remaining` et `likesCount` peuvent avoir 30 s de retard, les quotas réels sont revérifiés à la commande et au paiement.
+
+#### `GET /public/likes?deviceId=…` 🌐
+
+`200 { "slugs": ["afro-night-cotonou-3hhi", "…"] }` : événements (publiés ou clos) aimés par l'appareil, pour afficher les cœurs pleins sur l'accueil. Avec un jeton acheteur (facultatif), inclut aussi les likes faits depuis ses autres appareils. `deviceId` obligatoire (`400` sinon). Jamais mis en cache.
 
 #### `POST /public/events/:slug/like` 🌐 · `DELETE /public/events/:slug/like` 🌐
 
@@ -852,8 +856,8 @@ Dans un lot, les scans sont traités par `scannedAt` croissant. Entre appareils,
 
 | Demande | Implémentation | Choix faits sans le document v2 (à confirmer) |
 |---|---|---|
-| `GET /public/events?q=&category=&sort=popular\|date&cursor=&country=` | Implémenté, + `limit` et `deviceId` | `popular` = nombre de likes ; seuls les événements non terminés sont listés |
+| `GET /public/events?q=&category=&sort=popular\|date&cursor=&country=` | Conforme au PRD v2.1 §8.1, + `deviceId` (`isLiked`) | — |
 | `category` sur les événements | 6 valeurs, défaut `SOIREE` | Optionnel à la création (compatibilité) |
-| Likes : `likesCount`, `POST`/`DELETE /public/events/:slug/like` | Implémenté, un like par `deviceId` | + `isLiked` avec `?deviceId=` |
+| Likes : `likesCount`, `POST`/`DELETE /public/events/:slug/like`, `GET /public/likes` | Conforme au PRD v2.1 §8.3 | + `isLiked` avec `?deviceId=` |
 | `country`, `timeZone`, `coverFit`, `description` des catégories | Implémentés | ISO 2 lettres, fuseau IANA, `cover`\|`contain`, 300 caractères |
 | Compte acheteur (`/buyer/...`) | Implémenté (§4.10) | Code à 6 chiffres par e-mail (10 min, 5 essais), compte créé à la première connexion, session 30 jours, commandes retrouvées par l'e-mail, favoris = likes du compte |

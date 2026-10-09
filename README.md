@@ -69,7 +69,7 @@ Garanties métier vérifiées par les tests :
 | Stockage | Supabase Storage (images de couverture) |
 | Tâches planifiées | pg_cron (expiration des commandes non payées) |
 | QR codes | `qrcode` (PNG) · HMAC-SHA256 (`pgcrypto`) |
-| Tests | `node:test` (55 tests d'intégration) |
+| Tests | `node:test` (66 tests d'intégration) |
 
 ## Architecture
 
@@ -159,7 +159,7 @@ node --env-file=.env.production.local scripts/demo-snapshot.mjs    # production
 npm test
 ```
 
-55 tests d'intégration couvrant l'authentification, les événements, la page publique, les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
+66 tests d'intégration couvrant l'authentification, les événements, la page publique, la recherche et les likes, les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
 
 | Variable | Usage |
 |---|---|
@@ -199,7 +199,7 @@ Dans le tableau de bord Supabase : **désactiver l'inscription publique** (Authe
 │   ├── seed-demo.mjs               données de démonstration (assets/ : affiches)
 │   ├── demo-snapshot.mjs           état de référence de la remise à zéro nocturne
 │   └── load-test.mjs               test de charge
-├── docs/API.md                     documentation de l'API (27 routes)
+├── docs/API.md                     documentation de l'API (30 routes)
 ├── DECISIONS.md                    décisions techniques
 └── BACKEND_ROADMAP.md              suivi des phases du projet
 ```

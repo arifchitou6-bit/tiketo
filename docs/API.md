@@ -8,7 +8,7 @@
 1. [Démarrage](#1-démarrage)
 2. [Conventions](#2-conventions)
 3. [Authentification](#3-authentification)
-4. [Routes](#4-routes) : [Santé](#41-santé) · [Auth](#42-auth-organisateur) · [Événements](#43-événements-organisateur) · [Upload](#44-upload-dimage) · [Public](#45-page-publique) · [Commandes](#46-commandes-et-paiement) · [Tickets](#47-tickets) · [Staff](#48-staff) · [Scan](#49-scan)
+4. [Routes](#4-routes) : [Santé](#41-santé) · [Auth](#42-auth-organisateur) · [Événements](#43-événements-organisateur) · [Upload](#44-upload-dimage) · [Public](#45-pages-publiques) · [Commandes](#46-commandes-et-paiement) · [Tickets](#47-tickets) · [Staff](#48-staff) · [Scan](#49-scan)
 5. [Codes d'erreur](#5-codes-derreur)
 6. [Limites de requêtes](#6-limites-de-requêtes-rate-limiting)
 7. [Guide : scanner hors ligne](#7-guide--scanner-hors-ligne)
@@ -162,18 +162,23 @@ Toutes ces routes renvoient **`404 NOT_FOUND`** si l'événement n'existe pas **
   "slug": "afro-night-cotonou-w489",
   "name": "Afro Night Cotonou",
   "description": "La soirée afrobeats de l'année.",
+  "category": "SOIREE",
   "coverImageUrl": null,
+  "coverFit": "cover",
   "venue": "Le Code Bar",
   "city": "Cotonou",
+  "country": "BJ",
+  "timeZone": "Africa/Porto-Novo",
   "startsAt": "2026-12-20T20:00:00+00:00",
   "endsAt": "2026-12-21T04:00:00+00:00",
   "status": "DRAFT",
+  "likesCount": 0,
   "staffCode": null,
   "publishedAt": null,
   "createdAt": "2026-10-07T07:23:27.081881+00:00",
   "updatedAt": "2026-10-07T07:23:27.081881+00:00",
   "categories": [
-    { "id": "ed5bf041-…", "name": "Standard", "priceFcfa": 5000, "quantity": 100, "sold": 10, "remaining": 90 }
+    { "id": "ed5bf041-…", "name": "Standard", "description": "", "priceFcfa": 5000, "quantity": 100, "sold": 10, "remaining": 90 }
   ],
   "stats": { "capacity": 120, "ticketsSold": 10, "revenue": 50000, "fillRate": 8.3, "scannedCount": 0 }
 }
@@ -181,12 +186,22 @@ Toutes ces routes renvoient **`404 NOT_FOUND`** si l'événement n'existe pas **
 
 `status` : `DRAFT` (brouillon) → `PUBLISHED` (en vente) → `CLOSED` (billetterie fermée).
 
+| Champ (PRD v2) | Valeurs | Défaut |
+|---|---|---|
+| `category` | `CONCERT`, `SOIREE`, `FESTIVAL`, `CONFERENCE`, `THEATRE`, `EXPOSITION` | `SOIREE` |
+| `country` | code pays ISO 3166-1 à 2 lettres (`BJ`, `TG`, `CI`…), minuscules acceptées | `BJ` |
+| `timeZone` | fuseau IANA (`Africa/Porto-Novo`, `Africa/Lome`…) : pour afficher l'heure locale du lieu | `Africa/Porto-Novo` |
+| `coverFit` | `cover` (l'image remplit le cadre, rognée) ou `contain` (image entière) — à passer en `object-fit` | `cover` |
+| `likesCount` | nombre de likes (lecture seule) | `0` |
+| `categories[].description` | texte libre, 300 caractères max | `""` |
+
 #### `GET /events` 🔑 — US-02 (liste du dashboard)
 
 ```json
 200 { "events": [ {
   "id": "…", "slug": "afro-night-cotonou-ht3p", "name": "Afro Night Cotonou", "status": "PUBLISHED",
-  "venue": "Le Code Bar, Haie Vive", "city": "Cotonou", "coverImageUrl": null,
+  "category": "SOIREE", "venue": "Le Code Bar, Haie Vive", "city": "Cotonou", "country": "BJ",
+  "timeZone": "Africa/Porto-Novo", "coverImageUrl": "https://…", "coverFit": "cover", "likesCount": 3,
   "startsAt": "…", "endsAt": "…", "publishedAt": "…", "createdAt": "…",
   "capacity": 365, "ticketsSold": 12, "revenue": 235000, "scannedCount": 5
 } ] }
@@ -205,9 +220,13 @@ Triés par date de début décroissante. Liste vide → `{ "events": [] }` (éta
   "startsAt": "2026-12-20T20:00:00Z",
   "endsAt": "2026-12-21T04:00:00Z",
   "coverImageUrl": "https://…/event-covers/…/photo.jpg",
+  "category": "SOIREE",
+  "country": "BJ",
+  "timeZone": "Africa/Porto-Novo",
+  "coverFit": "cover",
   "categories": [
     { "name": "Standard", "priceFcfa": 5000, "quantity": 200 },
-    { "name": "VIP", "priceFcfa": 15000, "quantity": 50 }
+    { "name": "VIP", "priceFcfa": 15000, "quantity": 50, "description": "Accès carré VIP + 1 boisson" }
   ]
 }
 ```
@@ -219,6 +238,8 @@ Triés par date de début décroissante. Liste vide → `{ "events": [] }` (éta
 | `venue` / `city` | obligatoires (160 / 80 caractères max) |
 | `startsAt` / `endsAt` | ISO 8601, `endsAt` après `startsAt` |
 | `coverImageUrl` | optionnelle, URL (voir [upload](#44-upload-dimage)) |
+| `category`, `country`, `timeZone`, `coverFit` | optionnels (valeurs et défauts : voir l'objet `event` ci-dessus) |
+| `categories[].description` | optionnelle, 300 caractères max |
 | `categories` | 1 à 10, noms uniques (insensible à la casse) |
 | `priceFcfa` | entier 0 à 10 000 000 |
 | `quantity` | entier 1 à 100 000 |
@@ -356,23 +377,56 @@ Puis envoyer `url` dans `coverImageUrl` (création ou `PATCH`). Erreurs : `400` 
 
 > ⚠️ En local, le service Storage ne démarre pas sur la machine de dev : cette route sera testée sur le projet en ligne.
 
-### 4.5 Page publique
+### 4.5 Pages publiques
+
+#### `GET /public/events?q=&category=&country=&sort=date&cursor=&limit=12&deviceId=` 🌐 — accueil et recherche
+
+Événements **publiés et non terminés** (ceux en cours restent visibles). Tous les paramètres sont optionnels ; un paramètre vide (`?q=&category=`) est ignoré.
+
+| Paramètre | Règle |
+|---|---|
+| `q` | recherche dans le nom, la description, le lieu et la ville ; **insensible aux accents et à la casse** ; tous les mots doivent être présents (`soiree cotonou` trouve « Soirée … » à Cotonou) ; 100 caractères max |
+| `category` | une des 6 catégories (`CONCERT`, `SOIREE`…) |
+| `country` | code pays à 2 lettres (`BJ`) |
+| `sort` | `date` (défaut : le plus proche d'abord) ou `popular` (le plus de likes d'abord, puis par date) |
+| `limit` | 1 à 50 (défaut 12) |
+| `cursor` | valeur `nextCursor` de la page précédente, **à renvoyer telle quelle avec les mêmes filtres et le même tri** |
+| `deviceId` | optionnel : ajoute `isLiked` à chaque événement (voir likes ci-dessous) |
+
+```json
+200 {
+  "events": [ {
+    "id": "…", "slug": "afro-night-cotonou-3hhi", "name": "Afro Night Cotonou", "category": "SOIREE",
+    "coverImageUrl": "https://…", "coverFit": "cover",
+    "venue": "Le Code Bar, Haie Vive", "city": "Cotonou", "country": "BJ", "timeZone": "Africa/Porto-Novo",
+    "startsAt": "2026-10-17T19:00:00+00:00", "endsAt": "2026-10-18T03:00:00+00:00",
+    "likesCount": 3, "minPriceFcfa": 5000, "isSoldOut": false, "isSalesOpen": true,
+    "isLiked": false
+  } ],
+  "nextCursor": "eyJvIjoiZGF0ZSIsInMiOi…"
+}
+```
+
+`nextCursor: null` = dernière page (« Charger plus » masqué). Aucun résultat → `{ "events": [], "nextCursor": null }` (état vide). La pagination par curseur ne saute ni ne répète d'événement si de nouveaux sont publiés entre deux pages. Un curseur invalide ou obtenu avec un autre `sort` → `400 INVALID_CURSOR` : recharger la liste sans curseur. Cache 30 s (sauf avec `deviceId` : `private, no-store`).
 
 #### `GET /public/events/:slug` 🌐 — US-10, US-11
 
 ```json
 200 { "event": {
   "id": "…", "slug": "afro-night-cotonou-xbab", "name": "Afro Night Cotonou",
-  "description": "…", "coverImageUrl": null, "venue": "Le Code Bar", "city": "Cotonou",
+  "description": "…", "category": "SOIREE", "coverImageUrl": null, "coverFit": "cover",
+  "venue": "Le Code Bar", "city": "Cotonou", "country": "BJ", "timeZone": "Africa/Porto-Novo",
   "startsAt": "2026-12-20T20:00:00+00:00", "endsAt": "2026-12-21T04:00:00+00:00",
-  "status": "PUBLISHED",
+  "status": "PUBLISHED", "likesCount": 3,
   "isPast": false, "isSoldOut": false, "isSalesOpen": true, "minPriceFcfa": 5000,
   "categories": [
-    { "id": "…", "name": "Early Bird", "priceFcfa": 3000, "remaining": 0, "isSoldOut": true },
-    { "id": "…", "name": "Standard", "priceFcfa": 5000, "remaining": 188, "isSoldOut": false }
+    { "id": "…", "name": "Early Bird", "description": "", "priceFcfa": 3000, "remaining": 0, "isSoldOut": true },
+    { "id": "…", "name": "Standard", "description": "Accès général", "priceFcfa": 5000, "remaining": 188, "isSoldOut": false }
   ]
 } }
 ```
+
+Avec `?deviceId=…`, la réponse contient aussi `"isLiked": true|false`.
 
 | Indicateur | Usage côté front |
 |---|---|
@@ -383,7 +437,22 @@ Puis envoyer `url` dans `coverImageUrl` (création ou `PATCH`). Erreurs : `400` 
 | `minPriceFcfa` | « À partir de 5 000 FCFA » (catégories encore disponibles) |
 | `categories[].remaining` | Quantité max du sélecteur |
 
-Brouillon ou slug inconnu → `404`. Aucune donnée organisateur ni chiffre de vente. Mis en cache 30 s (`Cache-Control: public, max-age=30`) : `remaining` peut avoir 30 s de retard, les quotas réels sont revérifiés à la commande et au paiement.
+Brouillon ou slug inconnu → `404`. Aucune donnée organisateur ni chiffre de vente. Mis en cache 30 s (`Cache-Control: public, max-age=30`) : `remaining` et `likesCount` peuvent avoir 30 s de retard, les quotas réels sont revérifiés à la commande et au paiement.
+
+#### `POST /public/events/:slug/like` 🌐 · `DELETE /public/events/:slug/like` 🌐
+
+```json
+{ "deviceId": "3f1c9a52-7b0e-4c1d-9a8e-2f6b5c4d3e21" }
+```
+
+```json
+200 { "liked": true, "likesCount": 4 }      // DELETE : { "liked": false, "likesCount": 3 }
+```
+
+- **Un like par appareil** : `deviceId` est un identifiant généré une fois par le front et conservé (ex. `crypto.randomUUID()` dans `localStorage`) ; 8 à 100 caractères parmi lettres, chiffres, `-` et `_`.
+- **Idempotent** : liker deux fois ne compte qu'une fois, retirer un like absent ne fait rien. Pas besoin de bloquer le bouton pendant la requête : afficher `likesCount` renvoyé.
+- `DELETE` accepte aussi `?deviceId=…` dans l'URL (pour les clients qui n'envoient pas de corps avec DELETE).
+- Événements publiés ou clos uniquement (brouillon ou inconnu → `404`).
 
 ### 4.6 Commandes et paiement
 
@@ -584,6 +653,7 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 | 400 | `VALIDATION_ERROR` | Donnée invalide (`field` = champ en cause) |
 | 400 | `INVALID_JSON` | Corps JSON mal formé |
 | 400 | `INVALID_BODY` | Upload non multipart |
+| 400 | `INVALID_CURSOR` | Curseur de pagination invalide ou obtenu avec un autre tri : recharger sans curseur |
 | 400 | `WEAK_PASSWORD` | Mot de passe refusé par Supabase Auth |
 | 401 | `UNAUTHORIZED` | Jeton absent, invalide, expiré ou session fermée |
 | 401 | `INVALID_CREDENTIALS` | Email/mot de passe ou code/PIN incorrects |
@@ -619,6 +689,7 @@ Par adresse IP et par minute. Au-delà : `429 RATE_LIMITED` + en-tête `Retry-Af
 | `POST /staff/login` | 10 / min |
 | `POST /orders` | 60 / min |
 | `POST /orders/:id/simulate-payment` | 120 / min |
+| `POST` / `DELETE /public/events/:slug/like` (compteur commun) | 60 / min |
 | `POST /scan` | 100 / min **par agent** (session staff) |
 | `POST /scan/batch` | 30 / min **par agent** (session staff) |
 
@@ -682,3 +753,13 @@ Dans un lot, les scans sont traités par `scannedAt` croissant. Entre appareils,
 | Rate limit 10/min sur `/api/orders` | 60/min (+ 120/min paiement) | IP partagées par les opérateurs mobiles (CGNAT) |
 | Rate limit sur `/api/auth/*` | Sauf `/auth/me` et `/auth/logout` | `/me` est appelé à chaque page |
 | Rate limit `/api/scan` 100/min par IP | 100/min **par agent** | Plusieurs agents sur le même wifi partagent une IP |
+
+### Ajouts du PRD v2 (§7 et §8 transmis par Jude)
+
+| Demande | Implémentation | Choix faits sans le document v2 (à confirmer) |
+|---|---|---|
+| `GET /public/events?q=&category=&sort=popular\|date&cursor=&country=` | Implémenté, + `limit` et `deviceId` | `popular` = nombre de likes ; seuls les événements non terminés sont listés |
+| `category` sur les événements | 6 valeurs, défaut `SOIREE` | Optionnel à la création (compatibilité) |
+| Likes : `likesCount`, `POST`/`DELETE /public/events/:slug/like` | Implémenté, un like par `deviceId` | + `isLiked` avec `?deviceId=` |
+| `country`, `timeZone`, `coverFit`, `description` des catégories | Implémentés | ISO 2 lettres, fuseau IANA, `cover`\|`contain`, 300 caractères |
+| Compte acheteur (`/buyer/...`) | En cours | Code de connexion par e-mail |

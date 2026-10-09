@@ -158,3 +158,11 @@ Chaque décision suit le format **Contexte → Décision → Conséquences**. Le
 **Décision.** `demo_snapshot()` enregistre toutes les lignes du compte de démo (JSON, schéma privé `demo`) ; `demo_reset()`, lancé par pg_cron chaque nuit à 3 h (Cotonou), supprime tout ce que possède le compte et recharge la photo avec les mêmes identifiants et secrets. Les dates sont décalées du nombre minimal de semaines entières pour que le premier événement commence dans plus de 24 h.
 
 **Conséquences.** Les liens, codes staff, PIN et QR publiés restent valables indéfiniment ; la démo reste « à venir » et le jour de la semaine est conservé. Les commandes passées par des visiteurs sur la démo disparaissent chaque nuit. Après une migration qui ajoute des colonnes, il faut reprendre la photo. Les images envoyées par des visiteurs dans Storage ne sont pas supprimées (pas de suppression SQL possible dans Storage).
+
+## D20. Liste publique : curseur keyset, recherche sans accents, likes par appareil
+
+**Contexte.** PRD v2 : accueil et recherche (`q`, `category`, `country`, `sort=popular|date`, `cursor`) et likes avec `deviceId`, sans compte.
+
+**Décision.** Une fonction SQL (`list_public_events`) filtre, trie et pagine en une requête. Le curseur est un jeton opaque contenant la clé de tri de la dernière ligne (date, id, likes) : pagination *keyset*, stable quand des événements sont publiés entre deux pages, et liée au tri choisi. La recherche normalise les accents (`unaccent`) et exige chaque mot. Les likes sont uniques par (événement, appareil) ; le compteur `likes_count` est tenu par un trigger pour trier par popularité sans recompter.
+
+**Conséquences.** Les likes sont anonymes : un utilisateur peut liker depuis plusieurs appareils, et un script peut gonfler un compteur en inventant des `deviceId` (limité à 60 requêtes/min par IP). Acceptable pour un indicateur de popularité ; en production, lier les likes au compte acheteur. La recherche par `position` n'utilise pas d'index : suffisant jusqu'à quelques milliers d'événements (au-delà : `pg_trgm`).

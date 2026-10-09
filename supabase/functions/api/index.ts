@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
+import { rejectIfTooLarge } from "./lib/body.ts";
 import { env } from "./lib/env.ts";
 import { ApiError, errorResponse } from "./lib/errors.ts";
 import { admin } from "./lib/supabase.ts";
@@ -41,6 +42,33 @@ app.use("*", async (c, next) => {
   const ms = Math.round(performance.now() - start);
   console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms`);
   c.header("X-Content-Type-Options", "nosniff");
+});
+
+// Méthode non prévue sur une route existante (ex. PUT /events) : 405 + en-tête Allow,
+// avant toute authentification (sinon la réponse serait un 401 trompeur).
+let routeTable: { re: RegExp; method: string }[] | null = null;
+app.use("*", async (c, next) => {
+  if (c.req.method === "OPTIONS") return next();
+  const table = routeTable ??= app.routes.filter((r) => r.method !== "ALL").map((r) => ({
+    method: r.method,
+    re: new RegExp(`^${r.path.replace(/[.]/g, "\\.").replace(/:[^/]+/g, "[^/]+")}$`),
+  }));
+  const matching = table.filter((r) => r.re.test(c.req.path));
+  const allowed = [...new Set(matching.map((r) => r.method))];
+  if (allowed.length > 0 && !allowed.includes(c.req.method) && !(c.req.method === "HEAD" && allowed.includes("GET"))) {
+    c.header("Allow", allowed.join(", "));
+    throw new ApiError(405, "METHOD_NOT_ALLOWED", `Méthode ${c.req.method} non autorisée sur cette route (${allowed.join(", ")})`);
+  }
+  await next();
+});
+
+// Corps JSON limités à 1 Mo (le plus gros envoi légitime, un lot de 500 scans, pèse environ 150 Ko).
+// Les images de couverture ont leur propre limite de 5 Mo (routes/uploads.ts).
+app.use("*", async (c, next) => {
+  if (!c.req.path.startsWith("/api/uploads/")) {
+    await rejectIfTooLarge(c, 1024 * 1024, "Requête trop volumineuse (1 Mo maximum)");
+  }
+  await next();
 });
 
 app.get("/health", async (c) => {

@@ -69,7 +69,7 @@ Garanties métier vérifiées par les tests :
 | Stockage | Supabase Storage (images de couverture) |
 | Tâches planifiées | pg_cron (expiration des commandes non payées) |
 | QR codes | `qrcode` (PNG) · HMAC-SHA256 (`pgcrypto`) |
-| Tests | `node:test` (66 tests d'intégration) |
+| Tests | `node:test` (81 tests d'intégration) |
 
 ## Architecture
 
@@ -159,7 +159,7 @@ node --env-file=.env.production.local scripts/demo-snapshot.mjs    # production
 npm test
 ```
 
-66 tests d'intégration couvrant l'authentification, les événements, la page publique, la recherche et les likes, les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
+81 tests d'intégration couvrant l'authentification, les événements, la page publique, la recherche et les likes, la cohérence entre les routes (tests croisés), les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
 
 | Variable | Usage |
 |---|---|

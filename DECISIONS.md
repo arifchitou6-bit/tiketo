@@ -166,3 +166,11 @@ Chaque décision suit le format **Contexte → Décision → Conséquences**. Le
 **Décision.** Une fonction SQL (`list_public_events`) filtre, trie et pagine en une requête. Le curseur est un jeton opaque contenant la clé de tri de la dernière ligne (date, id, likes) : pagination *keyset*, stable quand des événements sont publiés entre deux pages, et liée au tri choisi. La recherche normalise les accents (`unaccent`) et exige chaque mot. Les likes sont uniques par (événement, appareil) ; le compteur `likes_count` est tenu par un trigger pour trier par popularité sans recompter.
 
 **Conséquences.** Les likes sont anonymes : un utilisateur peut liker depuis plusieurs appareils, et un script peut gonfler un compteur en inventant des `deviceId` (limité à 60 requêtes/min par IP). Acceptable pour un indicateur de popularité ; en production, lier les likes au compte acheteur. La recherche par `position` n'utilise pas d'index : suffisant jusqu'à quelques milliers d'événements (au-delà : `pg_trgm`).
+
+## D21. Détail public : cache pour les anonymes, lecture directe avec `deviceId`
+
+**Contexte.** Les tests croisés ont montré qu'après un like, le détail public pouvait afficher `isLiked: true` avec `likesCount: 0` (cache de 30 s, D15), et des places restantes en retard après un achat.
+
+**Décision.** Sans `deviceId`, le détail reste servi depuis le cache de 30 s (pics de visites). Avec `deviceId`, la réponse est déjà propre à l'appareil et non mise en cache : elle est lue en direct. Un like vide aussi le cache de l'événement sur l'instance.
+
+**Conséquences.** Un front qui envoie toujours `deviceId` affiche des chiffres cohérents avec le reste de l'API, pour une requête de plus par affichage. Les visiteurs anonymes gardent jusqu'à 30 s de retard (sans risque : les quotas sont revérifiés à la commande).

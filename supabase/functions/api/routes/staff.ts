@@ -71,7 +71,11 @@ staffRoutes.post("/login", rateLimit("staff-login", 10), async (c) => {
   if (error) throw fromDbError(error);
 
   const session = data as { eventId: string; eventName: string; venue: string; startsAt: string; endsAt: string; expiresAt: string };
-  return c.json({ ...session, token, ...(await loadTicketIndex(session.eventId)) });
+  // Ville et fuseau du lieu : afficher l'heure locale de l'événement sur le scanner
+  const { data: place, error: placeError } = await admin.from("events").select("city, time_zone")
+    .eq("id", session.eventId).single();
+  if (placeError) throw fromDbError(placeError);
+  return c.json({ ...session, city: place.city, timeZone: place.time_zone, token, ...(await loadTicketIndex(session.eventId)) });
 });
 
 // Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des autres agents).

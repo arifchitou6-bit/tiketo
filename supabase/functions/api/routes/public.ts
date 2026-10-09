@@ -145,26 +145,29 @@ publicRoutes.get("/events/:slug", async (c) => {
   const slug = c.req.param("slug").toLowerCase();
   if (!SLUG_RE.test(slug) || slug.length > 80) throw notFound("Événement introuvable");
 
+  // ?deviceId=… : réponse propre à l'appareil (isLiked), jamais mise en cache, donc lue en direct :
+  // likesCount, places restantes et isLiked concordent avec le reste de l'API.
+  const deviceId = c.req.query("deviceId");
+  if (deviceId) {
+    const valid = deviceIdSchema.safeParse(deviceId);
+    if (!valid.success) throw new ApiError(400, "VALIDATION_ERROR", valid.error.issues[0].message, "deviceId");
+    const body = await loadPublicEvent(slug);
+    if (!body) throw notFound("Événement introuvable");
+    const { data: isLiked, error } = await admin.rpc("is_event_liked", { p_event_id: body.event.id, p_device_id: deviceId });
+    if (error) throw fromDbError(error);
+    c.header("Cache-Control", "private, no-store");
+    return c.json({ event: { ...body.event, isLiked } });
+  }
+
+  // Visiteur anonyme : cache de 30 s (pics de visites après un partage sur Instagram/WhatsApp)
   const cached = memoryCache.get(slug);
   let body = cached && cached.expires > Date.now() ? cached.body as PublicEventBody : null;
   c.header("X-Cache", body ? "HIT" : "MISS");
-
   if (!body) {
     body = await loadPublicEvent(slug);
     if (!body) throw notFound("Événement introuvable");
     memoryCache.set(slug, { expires: Date.now() + CACHE_SECONDS * 1000, body });
     if (memoryCache.size > 500) memoryCache.delete(memoryCache.keys().next().value!);
-  }
-
-  // ?deviceId=… : ajoute isLiked (hors cache, propre à l'appareil)
-  const deviceId = c.req.query("deviceId");
-  if (deviceId) {
-    const valid = deviceIdSchema.safeParse(deviceId);
-    if (!valid.success) throw new ApiError(400, "VALIDATION_ERROR", valid.error.issues[0].message, "deviceId");
-    const { data: isLiked, error } = await admin.rpc("is_event_liked", { p_event_id: body.event.id, p_device_id: deviceId });
-    if (error) throw fromDbError(error);
-    c.header("Cache-Control", "private, no-store");
-    return c.json({ event: { ...body.event, isLiked } });
   }
 
   c.header("Cache-Control", `public, max-age=${CACHE_SECONDS}, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=${CACHE_SECONDS}`);
@@ -180,6 +183,7 @@ async function setLike(slug: string, deviceId: string, liked: boolean) {
   if (!SLUG_RE.test(slug) || slug.length > 80) throw notFound("Événement introuvable");
   const { data, error } = await admin.rpc("set_event_like", { p_slug: slug, p_device_id: deviceId, p_liked: liked });
   if (error) throw fromDbError(error);
+  memoryCache.delete(slug); // le compteur affiché aux visiteurs de cette instance est à jour
   return data as { liked: boolean; likesCount: number };
 }
 

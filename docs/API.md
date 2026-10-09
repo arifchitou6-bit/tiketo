@@ -50,7 +50,10 @@ Comptes de démo : voir `node scripts/seed-demo.mjs` (affiche identifiants, code
 | Montants | Entiers en **FCFA** (pas de décimales) : `15000` |
 | Identifiants | UUID v4 (`"07a3b67b-6ec8-4372-93f8-547990f2a9e2"`) |
 | Validation | Stricte : **tout champ non prévu est refusé** (`400`, « Champ non autorisé : … ») |
-| Erreurs | Toujours `{ "error": { "code", "message", "field"? } }` — voir [§5](#5-codes-derreur) |
+| Erreurs | Toujours `{ "error": { "code", "message", "field"? } }` — voir [§5](#5-codes-derreur). Messages **toujours en français** |
+| Taille | Corps JSON limité à **1 Mo** (`413 PAYLOAD_TOO_LARGE`) ; images : 5 Mo |
+| Méthodes | Méthode non prévue sur une route existante → `405 METHOD_NOT_ALLOWED` + en-tête `Allow` (ex. `PUT /events` → `Allow: GET, POST`) |
+| Fuseau | Afficher les dates dans `event.timeZone` (heure du lieu), présent sur l'événement, la commande et la connexion staff |
 
 Exemple d'erreur de validation :
 
@@ -426,7 +429,7 @@ Puis envoyer `url` dans `coverImageUrl` (création ou `PATCH`). Erreurs : `400` 
 } }
 ```
 
-Avec `?deviceId=…`, la réponse contient aussi `"isLiked": true|false`.
+Avec `?deviceId=…`, la réponse contient aussi `"isLiked": true|false` et elle est **lue en direct** (pas de cache) : `likesCount`, `remaining` et `isLiked` sont toujours à jour. Sans `deviceId` (visiteur anonyme), le cache de 30 s s'applique. **Conseil : envoyer toujours `deviceId`.**
 
 | Indicateur | Usage côté front |
 |---|---|
@@ -484,8 +487,9 @@ Le **total est calculé par le serveur** (aucun prix n'est accepté du client).
     "totalAmount": 25000, "paymentProvider": "mtn", "paymentReference": "TKO-TD4AFSQAFW",
     "failureReason": null, "createdAt": "2026-10-07T08:05:14.307846+00:00",
     "expiresAt": "2026-10-07T08:20:14.307Z", "paidAt": null,
-    "event": { "id": "…", "slug": "afro-night-cotonou-w489", "name": "Afro Night Cotonou", "venue": "Le Code Bar",
-               "city": "Cotonou", "startsAt": "…", "endsAt": "…", "coverImageUrl": null },
+    "event": { "id": "…", "slug": "afro-night-cotonou-w489", "name": "Afro Night Cotonou", "category": "SOIREE",
+               "venue": "Le Code Bar", "city": "Cotonou", "country": "BJ", "timeZone": "Africa/Porto-Novo",
+               "startsAt": "…", "endsAt": "…", "coverImageUrl": null, "coverFit": "cover" },
     "items": [
       { "categoryId": "…", "categoryName": "Standard", "quantity": 2, "unitPriceFcfa": 5000, "subtotal": 10000 },
       { "categoryId": "…", "categoryName": "VIP", "quantity": 1, "unitPriceFcfa": 15000, "subtotal": 15000 }
@@ -561,8 +565,8 @@ const wa = `https://wa.me/?text=${encodeURIComponent(text)}`;
 
 ```json
 200 {
-  "eventId": "…", "eventName": "Afro Night Cotonou", "venue": "Le Code Bar",
-  "startsAt": "…", "endsAt": "…", "expiresAt": "2026-12-21T16:00:00+00:00",
+  "eventId": "…", "eventName": "Afro Night Cotonou", "venue": "Le Code Bar", "city": "Cotonou",
+  "timeZone": "Africa/Porto-Novo", "startsAt": "…", "endsAt": "…", "expiresAt": "2026-12-21T16:00:00+00:00",
   "token": "3f9a…(64 caractères)",
   "ticketHashes": ["c8c6c83ba06aa2619f8db7fed4705d0ed41cfc2970bc7482fe46c75d531fbfae", "…"],
   "tickets": [ { "hash": "c8c6c83b…", "holderName": "Aïcha K.", "category": "Standard", "status": "VALID", "scannedAt": null } ],
@@ -659,6 +663,7 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 | 401 | `INVALID_CREDENTIALS` | Email/mot de passe ou code/PIN incorrects |
 | 401 | `INVALID_REFRESH_TOKEN` | Session expirée : se reconnecter |
 | 404 | `NOT_FOUND` | Ressource inconnue ou appartenant à un autre organisateur |
+| 405 | `METHOD_NOT_ALLOWED` | Méthode non prévue sur cette route (voir l'en-tête `Allow`) |
 | 409 | `EMAIL_TAKEN` | Compte déjà existant |
 | 409 | `SOLD_OUT` | Plus assez de places |
 | 409 | `EVENT_CLOSED` | Billetterie fermée |
@@ -670,6 +675,7 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 | 409 | `ORDER_EXPIRED` | Commande non payée dans les 15 minutes |
 | 409 | `CONFLICT` | Doublon en base |
 | 413 | `FILE_TOO_LARGE` | Image > 5 Mo |
+| 413 | `PAYLOAD_TOO_LARGE` | Corps JSON > 1 Mo |
 | 415 | `UNSUPPORTED_FILE_TYPE` | Ni JPEG, ni PNG, ni WebP |
 | 422 | `CATEGORY_NOT_FOUND` | Catégorie inconnue pour cet événement |
 | 422 | `NO_CATEGORY` | Publication sans catégorie |

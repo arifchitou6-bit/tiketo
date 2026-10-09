@@ -52,7 +52,7 @@ export async function loadOrder(id: string) {
     .select(`
       id, status, buyer_name, buyer_phone, buyer_email, total_amount, payment_provider, payment_reference,
       failure_reason, created_at, paid_at,
-      event:events ( id, slug, name, venue, city, starts_at, ends_at, cover_image_url ),
+      event:events ( id, slug, name, category, venue, city, country, time_zone, starts_at, ends_at, cover_image_url, cover_fit ),
       items:order_items ( quantity, unit_price_fcfa, category:ticket_categories ( id, name ) )
     `)
     .eq("id", id)
@@ -79,11 +79,15 @@ export async function loadOrder(id: string) {
       id: event.id,
       slug: event.slug,
       name: event.name,
+      category: event.category,
       venue: event.venue,
       city: event.city,
+      country: event.country,
+      timeZone: event.time_zone,
       startsAt: event.starts_at,
       endsAt: event.ends_at,
       coverImageUrl: event.cover_image_url,
+      coverFit: event.cover_fit,
     },
     // deno-lint-ignore no-explicit-any
     items: (data.items as any[]).map((i) => ({

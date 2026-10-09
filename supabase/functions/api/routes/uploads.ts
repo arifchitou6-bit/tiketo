@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { requireOrganizer } from "../lib/auth.ts";
+import { rejectIfTooLarge } from "../lib/body.ts";
 import { env } from "../lib/env.ts";
 import { ApiError } from "../lib/errors.ts";
 import { admin } from "../lib/supabase.ts";
@@ -26,15 +27,9 @@ export const uploadRoutes = new Hono<AppEnv>();
 uploadRoutes.use("*", requireOrganizer);
 
 uploadRoutes.post("/cover", async (c) => {
-  // Envoi trop gros annoncé : on vide le flux SANS décoder le multipart (décoder 6 Mo dépasse la
-  // limite CPU de l'Edge Function), puis on refuse. Le flux est lu jusqu'au bout car répondre
-  // avant la fin de l'envoi fait échouer la passerelle (504) : le client ne verrait pas l'erreur.
-  const declared = Number(c.req.header("Content-Length") ?? 0);
-  if (declared > MAX_BYTES + 64 * 1024) {
-    const reader = c.req.raw.body?.getReader();
-    if (reader) while (!(await reader.read()).done) { /* vidage */ }
-    throw new ApiError(413, "FILE_TOO_LARGE", "L'image ne doit pas dépasser 5 Mo", "file");
-  }
+  // Envoi trop gros annoncé : refusé SANS décoder le multipart (décoder 6 Mo dépasse la limite CPU
+  // de l'Edge Function). Marge de 64 Ko pour l'enveloppe multipart.
+  await rejectIfTooLarge(c, MAX_BYTES + 64 * 1024, "L'image ne doit pas dépasser 5 Mo", "file");
 
   let form: Record<string, unknown>;
   try {

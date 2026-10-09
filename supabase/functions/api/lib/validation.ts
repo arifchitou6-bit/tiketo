@@ -2,6 +2,55 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { ApiError } from "./errors.ts";
 
+// Messages par défaut en français pour toutes les validations Zod sans message explicite
+// (sinon Zod renvoie de l'anglais : "String must contain at most 80 character(s)").
+const plural = (n: number | bigint, word: string) => `${n} ${word}${Number(n) > 1 ? "s" : ""}`;
+const TYPES: Record<string, string> = {
+  string: "un texte", number: "un nombre", integer: "un entier", boolean: "un booléen", array: "une liste",
+  object: "un objet", date: "une date", null: "null", undefined: "absent",
+};
+
+z.setErrorMap((issue, ctx) => {
+  switch (issue.code) {
+    case z.ZodIssueCode.invalid_type:
+      if (issue.received === "undefined") return { message: "Ce champ est requis" };
+      return { message: `Type invalide : ${TYPES[issue.expected] ?? issue.expected} attendu` };
+    case z.ZodIssueCode.too_small: {
+      const m = issue.minimum;
+      if (issue.type === "string") return { message: m === 1 ? "Ce champ ne peut pas être vide" : `${plural(m, "caractère")} minimum` };
+      if (issue.type === "array") return { message: m === 1 ? "La liste ne peut pas être vide" : `${plural(m, "élément")} minimum` };
+      if (issue.type === "number") return { message: `La valeur doit être ${issue.inclusive ? "supérieure ou égale" : "supérieure"} à ${m}` };
+      break;
+    }
+    case z.ZodIssueCode.too_big: {
+      const m = issue.maximum;
+      if (issue.type === "string") return { message: `${plural(m, "caractère")} maximum` };
+      if (issue.type === "array") return { message: `${plural(m, "élément")} maximum` };
+      if (issue.type === "number") return { message: `La valeur doit être ${issue.inclusive ? "inférieure ou égale" : "inférieure"} à ${m}` };
+      break;
+    }
+    case z.ZodIssueCode.invalid_string: {
+      const v = issue.validation;
+      if (v === "email") return { message: "Email invalide" };
+      if (v === "url") return { message: "URL invalide" };
+      if (v === "uuid") return { message: "Identifiant invalide" };
+      if (v === "datetime") return { message: "Date au format ISO 8601 attendue (ex. 2026-12-31T20:00:00Z)" };
+      return { message: "Format invalide" };
+    }
+    case z.ZodIssueCode.invalid_enum_value:
+      return { message: `Valeur invalide (valeurs possibles : ${issue.options.join(", ")})` };
+    case z.ZodIssueCode.not_finite:
+    case z.ZodIssueCode.invalid_date:
+      return { message: "Valeur invalide" };
+    case z.ZodIssueCode.unrecognized_keys:
+      return { message: `Champ non autorisé : ${issue.keys.join(", ")}` };
+    case z.ZodIssueCode.invalid_union:
+    case z.ZodIssueCode.custom:
+      return { message: "Valeur invalide" };
+  }
+  return { message: ctx.defaultError };
+});
+
 // Lit et valide le corps JSON. En cas d'erreur : 400 { error: { code, message, field } }
 // avec le premier champ invalide (ex. "email", "categories.0.priceFcfa").
 export async function parseJson<T extends z.ZodTypeAny>(c: Context, schema: T): Promise<z.infer<T>> {

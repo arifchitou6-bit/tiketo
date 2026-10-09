@@ -8,7 +8,7 @@
 1. [Démarrage](#1-démarrage)
 2. [Conventions](#2-conventions)
 3. [Authentification](#3-authentification)
-4. [Routes](#4-routes) : [Santé](#41-santé) · [Auth](#42-auth-organisateur) · [Événements](#43-événements-organisateur) · [Upload](#44-upload-dimage) · [Public](#45-pages-publiques) · [Commandes](#46-commandes-et-paiement) · [Tickets](#47-tickets) · [Staff](#48-staff) · [Scan](#49-scan)
+4. [Routes](#4-routes) : [Santé](#41-santé) · [Auth](#42-auth-organisateur) · [Événements](#43-événements-organisateur) · [Upload](#44-upload-dimage) · [Public](#45-pages-publiques) · [Commandes](#46-commandes-et-paiement) · [Tickets](#47-tickets) · [Staff](#48-staff) · [Scan](#49-scan) · [Compte acheteur](#410-compte-acheteur)
 5. [Codes d'erreur](#5-codes-derreur)
 6. [Limites de requêtes](#6-limites-de-requêtes-rate-limiting)
 7. [Guide : scanner hors ligne](#7-guide--scanner-hors-ligne)
@@ -67,13 +67,16 @@ Exemple d'erreur de validation :
 
 ## 3. Authentification
 
-Trois niveaux d'accès :
+Quatre niveaux d'accès :
 
 | Qui | Comment | Routes |
 |---|---|---|
 | Public (acheteur) | Aucune authentification | `/public/*`, `/orders/*`, `/tickets/*`, `/health` |
 | Organisateur | `Authorization: Bearer <accessToken>` (jeton Supabase Auth) | `/auth/me`, `/auth/logout`, `/events/*`, `/uploads/*` |
 | Staff (agent de porte) | `Authorization: Bearer <token staff>` (reçu à `/staff/login`) | `/staff/tickets`, `/scan`, `/scan/batch` |
+| Acheteur connecté | `Authorization: Bearer <token acheteur>` (reçu à `/buyer/otp/verify`) | `/buyer/me`, `/buyer/logout`, `/buyer/orders`, `/buyer/favorites` ; **facultatif** sur `POST /orders` et les likes |
+
+Chaque jeton n'ouvre que son propre espace : un jeton acheteur est refusé côté organisateur et scanner, et inversement.
 
 ### Cycle de vie de la session organisateur
 
@@ -94,7 +97,7 @@ Le jeton staff est opaque (64 caractères), valable jusqu'à **12 h après la fi
 
 ## 4. Routes
 
-Légende : 🌐 public · 🔑 organisateur · 🛂 staff
+Légende : 🌐 public · 🔑 organisateur · 🛂 staff · 👤 acheteur connecté
 
 ### 4.1 Santé
 
@@ -648,6 +651,85 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 
 `results[i].index` correspond à la position dans le lot envoyé. Voir le [guide](#7-guide--scanner-hors-ligne).
 
+### 4.10 Compte acheteur
+
+Connexion **sans mot de passe** : l'acheteur saisit son e-mail, reçoit un **code à 6 chiffres** (valable 10 minutes) et le saisit. Le compte est **créé automatiquement** à la première connexion. Session de **30 jours**.
+
+#### `POST /buyer/otp/request` 🌐
+
+```json
+{ "email": "aicha@mail.bj" }
+```
+
+```json
+200 { "sent": true, "expiresInSeconds": 600, "retryAfterSeconds": 60 }
+```
+
+- Réponse **identique** que l'e-mail ait un compte ou non (on ne révèle pas qui est inscrit).
+- Un nouveau code annule le précédent. Délai de **60 s** entre deux envois pour un même e-mail → `429 OTP_COOLDOWN` (+ `Retry-After`) : afficher un compte à rebours sur « Renvoyer le code ».
+- **5 codes par heure** et par e-mail, **5 demandes par minute** et par IP → `429 RATE_LIMITED`.
+- Expéditeur : « TICKETO ». Conseil : afficher « Pensez à vérifier vos courriers indésirables ».
+
+#### `POST /buyer/otp/verify` 🌐
+
+```json
+{ "email": "aicha@mail.bj", "code": "482913", "deviceId": "3f1c9a52-…" }
+```
+
+```json
+200 {
+  "buyer": { "id": "…", "email": "aicha@mail.bj", "name": null, "phone": null, "createdAt": "…" },
+  "session": { "token": "9c1e…(64 caractères)", "expiresAt": "2026-11-08T13:07:59Z", "tokenType": "bearer" }
+}
+```
+
+| Erreur | Signification |
+|---|---|
+| `401 OTP_INVALID` | Code incorrect ; le message indique les essais restants (« Code incorrect (4 essais restants) ») |
+| `401 OTP_EXPIRED` | Code de plus de 10 minutes : en redemander un |
+| `429 OTP_TOO_MANY_ATTEMPTS` | 5 erreurs : le code est bloqué, en redemander un |
+
+- Un code ne sert **qu'une fois**. `field: "code"` pour afficher l'erreur sous le champ.
+- `deviceId` (facultatif, le même que pour les likes) : les likes faits sur l'appareil **avant** la connexion rejoignent les favoris du compte.
+
+#### `GET /buyer/me` 👤 · `POST /buyer/logout` 👤
+
+`200 { "buyer": { "id", "email", "name", "phone", "createdAt" } }`. `name` et `phone` sont ceux de la **dernière commande** passée en étant connecté : à utiliser pour **pré-remplir** le formulaire d'achat. `logout` → `204`, effet immédiat.
+
+#### `GET /buyer/orders?page=1&pageSize=20&status=PAID` 👤
+
+Commandes passées **avec l'e-mail du compte** (même avant sa création : l'e-mail est prouvé par le code) **ou** en étant connecté. La plus récente d'abord.
+
+```json
+200 {
+  "orders": [ {
+    "id": "…", "status": "PAID", "totalAmount": 30000, "ticketCount": 2, "summary": "2× VIP",
+    "paymentProvider": "mtn", "paymentReference": "TKO-…", "createdAt": "…", "paidAt": "…",
+    "event": { "id": "…", "slug": "afro-night-cotonou-3hhi", "name": "Afro Night Cotonou", "category": "SOIREE",
+               "venue": "…", "city": "Cotonou", "country": "BJ", "timeZone": "Africa/Porto-Novo",
+               "startsAt": "…", "endsAt": "…", "status": "PUBLISHED", "coverImageUrl": "https://…", "coverFit": "cover" }
+  } ],
+  "pagination": { "page": 1, "pageSize": 20, "total": 2, "totalPages": 1 }
+}
+```
+
+Les tickets (QR) d'une commande : `GET /orders/:id` (inchangé).
+
+#### `GET /buyer/favorites` 👤
+
+`200 { "events": [ … ] }` : les événements likés (publiés ou clos), le plus récemment liké d'abord, au format des cartes de la liste publique, plus `status`, `isPast`, `isLiked: true` et `likedAt`.
+
+#### Être connecté sur les routes publiques
+
+Avec le jeton acheteur dans `Authorization` (facultatif) :
+- `POST /orders` : la commande rejoint le compte ; si `buyer.email` est absent, l'e-mail du compte est utilisé ; nom et téléphone sont mémorisés pour la prochaine fois.
+- `POST` / `DELETE /public/events/:slug/like` : le like devient un favori du compte. Retirer un like en étant connecté retire le favori, même s'il a été fait depuis un autre appareil.
+- Un jeton présent mais **invalide ou expiré** → `401` : reconnecter l'acheteur (ou renvoyer la requête sans jeton).
+
+#### Compte de démonstration
+
+`acheteur@ticketo.bj` avec le code **`246810`** : aucun e-mail n'est envoyé, `otp/verify` peut être appelé directement (bouton « connexion en un clic »). Il a 2 commandes payées et 2 favoris, restaurés chaque nuit avec la démo.
+
 ---
 
 ## 5. Codes d'erreur
@@ -662,6 +744,7 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 | 401 | `UNAUTHORIZED` | Jeton absent, invalide, expiré ou session fermée |
 | 401 | `INVALID_CREDENTIALS` | Email/mot de passe ou code/PIN incorrects |
 | 401 | `INVALID_REFRESH_TOKEN` | Session expirée : se reconnecter |
+| 401 | `OTP_INVALID` / `OTP_EXPIRED` | Code de connexion acheteur incorrect ou expiré |
 | 404 | `NOT_FOUND` | Ressource inconnue ou appartenant à un autre organisateur |
 | 405 | `METHOD_NOT_ALLOWED` | Méthode non prévue sur cette route (voir l'en-tête `Allow`) |
 | 409 | `EMAIL_TAKEN` | Compte déjà existant |
@@ -680,8 +763,11 @@ Rafraîchit l'index hors ligne (tickets vendus après la connexion, scans des au
 | 422 | `CATEGORY_NOT_FOUND` | Catégorie inconnue pour cet événement |
 | 422 | `NO_CATEGORY` | Publication sans catégorie |
 | 429 | `RATE_LIMITED` | Trop de requêtes (voir `Retry-After`) |
+| 429 | `OTP_COOLDOWN` | Nouveau code demandé moins de 60 s après le précédent (voir `Retry-After`) |
+| 429 | `OTP_TOO_MANY_ATTEMPTS` | 5 codes faux : redemander un code |
 | 500 | `INTERNAL_ERROR` | Erreur serveur (jamais de détail technique exposé) |
 | 502 | `UPLOAD_FAILED` | Échec d'enregistrement de l'image |
+| 502 | `EMAIL_FAILED` | Le code n'a pas pu être envoyé par e-mail : réessayer |
 
 ---
 
@@ -696,6 +782,8 @@ Par adresse IP et par minute. Au-delà : `429 RATE_LIMITED` + en-tête `Retry-Af
 | `POST /orders` | 60 / min |
 | `POST /orders/:id/simulate-payment` | 120 / min |
 | `POST` / `DELETE /public/events/:slug/like` (compteur commun) | 60 / min |
+| `POST /buyer/otp/request` | 5 / min par IP + 5 / heure **par e-mail** (+ 60 s entre deux codes) |
+| `POST /buyer/otp/verify` | 10 / min par IP (+ 5 essais par code) |
 | `POST /scan` | 100 / min **par agent** (session staff) |
 | `POST /scan/batch` | 30 / min **par agent** (session staff) |
 
@@ -768,4 +856,4 @@ Dans un lot, les scans sont traités par `scannedAt` croissant. Entre appareils,
 | `category` sur les événements | 6 valeurs, défaut `SOIREE` | Optionnel à la création (compatibilité) |
 | Likes : `likesCount`, `POST`/`DELETE /public/events/:slug/like` | Implémenté, un like par `deviceId` | + `isLiked` avec `?deviceId=` |
 | `country`, `timeZone`, `coverFit`, `description` des catégories | Implémentés | ISO 2 lettres, fuseau IANA, `cover`\|`contain`, 300 caractères |
-| Compte acheteur (`/buyer/...`) | En cours | Code de connexion par e-mail |
+| Compte acheteur (`/buyer/...`) | Implémenté (§4.10) | Code à 6 chiffres par e-mail (10 min, 5 essais), compte créé à la première connexion, session 30 jours, commandes retrouvées par l'e-mail, favoris = likes du compte |

@@ -120,6 +120,29 @@ const ORDERS = [
   [1, 1, 2, "Carine Sossa", "+22997012345", "mtn"],
 ];
 
+// Compte acheteur de démonstration (code fixe, aucun e-mail envoyé) : 2 commandes payées et 2 favoris
+export const DEMO_BUYER = { email: "acheteur@ticketo.bj", code: "246810" };
+
+async function seedDemoBuyer(events) {
+  const { session } = await api("POST", "/buyer/otp/verify", {
+    body: { email: DEMO_BUYER.email, code: DEMO_BUYER.code, deviceId: "demo-acheteur-telephone" },
+  });
+  const buyer = { name: "Awa Houénou", phone: "+22997556600", provider: "mtn" };
+  const purchases = [[0, 1, 2], [1, 0, 1]]; // [événement, catégorie, quantité]
+  for (const [evIdx, catIdx, quantity] of purchases) {
+    const ev = events[evIdx];
+    const { order } = await api("POST", "/orders", {
+      token: session.token,
+      body: { eventSlug: ev.slug, items: [{ categoryId: ev.categories[catIdx].id, quantity }], buyer },
+    });
+    await api("POST", `/orders/${order.id}/simulate-payment`);
+  }
+  for (const ev of events) {
+    await api("POST", `/public/events/${ev.slug}/like`, { token: session.token, body: { deviceId: "demo-acheteur-telephone" } });
+  }
+  console.log(`✔ Compte acheteur ${DEMO_BUYER.email} : ${purchases.length} commandes payées, ${events.length} favoris`);
+}
+
 async function main() {
   console.log(`TICKETO — seed de démonstration\nAPI : ${API_URL}\n`);
   await api("GET", "/health");
@@ -178,8 +201,11 @@ async function main() {
   }
   console.log(`✔ ${toScan.length} entrées scannées sur « ${created[0].name} »`);
 
+  await seedDemoBuyer(created);
+
   console.log("\n================ ACCÈS DÉMO ================");
   console.log(`Organisateur : ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+  console.log(`Acheteur     : ${DEMO_BUYER.email} / code ${DEMO_BUYER.code}`);
   created.forEach((ev, i) => {
     console.log(`\n${ev.name}`);
     console.log(`  Page publique : ${ev.publicUrl}`);

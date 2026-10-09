@@ -3,6 +3,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { optionalBuyer } from "../lib/auth.ts";
 import { ApiError, fromDbError, notFound } from "../lib/errors.ts";
 import { rateLimit } from "../lib/rateLimit.ts";
 import { admin } from "../lib/supabase.ts";
@@ -178,24 +179,25 @@ publicRoutes.get("/events/:slug", async (c) => {
 // certains clients n'envoyant pas de corps avec DELETE).
 const likeBodySchema = z.object({ deviceId: deviceIdSchema }).strict();
 
-async function setLike(slug: string, deviceId: string, liked: boolean) {
+async function setLike(slug: string, deviceId: string, liked: boolean, buyerId: string | null) {
   slug = slug.toLowerCase();
   if (!SLUG_RE.test(slug) || slug.length > 80) throw notFound("Événement introuvable");
-  const { data, error } = await admin.rpc("set_event_like", { p_slug: slug, p_device_id: deviceId, p_liked: liked });
+  const { data, error } = await admin.rpc("set_event_like", { p_slug: slug, p_device_id: deviceId, p_liked: liked, p_buyer_id: buyerId });
   if (error) throw fromDbError(error);
   memoryCache.delete(slug); // le compteur affiché aux visiteurs de cette instance est à jour
   return data as { liked: boolean; likesCount: number };
 }
 
-publicRoutes.post("/events/:slug/like", rateLimit("like", 60), async (c) => {
+// Acheteur connecté (facultatif) : le like devient un favori du compte
+publicRoutes.post("/events/:slug/like", rateLimit("like", 60), optionalBuyer, async (c) => {
   const { deviceId } = await parseJson(c, likeBodySchema);
-  return c.json(await setLike(c.req.param("slug"), deviceId, true));
+  return c.json(await setLike(c.req.param("slug"), deviceId, true, c.get("buyer")?.buyerId ?? null));
 });
 
-publicRoutes.delete("/events/:slug/like", rateLimit("like", 60), async (c) => {
+publicRoutes.delete("/events/:slug/like", rateLimit("like", 60), optionalBuyer, async (c) => {
   let deviceId = c.req.query("deviceId");
   if (!deviceId) deviceId = (await parseJson(c, likeBodySchema)).deviceId;
   const valid = deviceIdSchema.safeParse(deviceId);
   if (!valid.success) throw new ApiError(400, "VALIDATION_ERROR", valid.error.issues[0].message, "deviceId");
-  return c.json(await setLike(c.req.param("slug"), deviceId, false));
+  return c.json(await setLike(c.req.param("slug"), deviceId, false, c.get("buyer")?.buyerId ?? null));
 });

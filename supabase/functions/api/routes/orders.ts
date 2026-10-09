@@ -2,6 +2,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
+import { optionalBuyer } from "../lib/auth.ts";
 import { env } from "../lib/env.ts";
 import { ApiError, fromDbError, notFound } from "../lib/errors.ts";
 import { rateLimit } from "../lib/rateLimit.ts";
@@ -133,8 +134,11 @@ const PAYMENT_FAILURES: Record<string, string> = {
 export const orderRoutes = new Hono<AppEnv>();
 
 // 60/min par IP : les opérateurs mobiles partagent souvent une même IP entre de nombreux abonnés (CGNAT)
-orderRoutes.post("/", rateLimit("orders", 60), async (c) => {
+// Acheteur connecté (facultatif) : la commande rejoint son compte ; e-mail du compte par défaut.
+orderRoutes.post("/", rateLimit("orders", 60), optionalBuyer, async (c) => {
   const body = await parseJson(c, createOrderSchema);
+  const buyer = c.get("buyer");
+  if (buyer && !body.buyer.email) body.buyer.email = buyer.email;
 
   const { data: orderId, error } = await admin.rpc("create_order", {
     p_slug: body.eventSlug,
@@ -142,6 +146,14 @@ orderRoutes.post("/", rateLimit("orders", 60), async (c) => {
     p_buyer: body.buyer,
   });
   if (error) throw fromDbError(error);
+
+  if (buyer) {
+    const [linked, profile] = await Promise.all([
+      admin.from("orders").update({ buyer_id: buyer.buyerId }).eq("id", orderId),
+      admin.from("buyers").update({ name: body.buyer.name, phone: body.buyer.phone }).eq("id", buyer.buyerId),
+    ]);
+    for (const r of [linked, profile]) if (r.error) throw fromDbError(r.error);
+  }
 
   const order = await loadOrder(orderId);
   return c.json({

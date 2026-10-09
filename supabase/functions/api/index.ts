@@ -10,6 +10,7 @@ import { ApiError, errorResponse } from "./lib/errors.ts";
 import { admin } from "./lib/supabase.ts";
 import type { AppEnv } from "./lib/types.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { buyerRoutes } from "./routes/buyer.ts";
 import { eventRoutes } from "./routes/events.ts";
 import { orderRoutes } from "./routes/orders.ts";
 import { publicRoutes } from "./routes/public.ts";
@@ -88,6 +89,7 @@ app.route("/orders", orderRoutes);
 app.route("/tickets", ticketRoutes);
 app.route("/staff", staffRoutes);
 app.route("/scan", scanRoutes);
+app.route("/buyer", buyerRoutes);
 
 app.notFound((c) => errorResponse(c, new ApiError(404, "NOT_FOUND", "Route introuvable")));
 

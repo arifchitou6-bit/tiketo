@@ -174,3 +174,11 @@ Chaque décision suit le format **Contexte → Décision → Conséquences**. Le
 **Décision.** Sans `deviceId`, le détail reste servi depuis le cache de 30 s (pics de visites). Avec `deviceId`, la réponse est déjà propre à l'appareil et non mise en cache : elle est lue en direct. Un like vide aussi le cache de l'événement sur l'instance.
 
 **Conséquences.** Un front qui envoie toujours `deviceId` affiche des chiffres cohérents avec le reste de l'API, pour une requête de plus par affichage. Les visiteurs anonymes gardent jusqu'à 30 s de retard (sans risque : les quotas sont revérifiés à la commande).
+
+## D22. Compte acheteur par code e-mail, séparé de Supabase Auth
+
+**Contexte.** PRD v2 : compte acheteur avec `/buyer/otp/request` et `/buyer/otp/verify`. L'inscription publique de Supabase Auth est désactivée (D12) et les comptes Auth sont ceux des organisateurs.
+
+**Décision.** Tables propres (`buyers`, `buyer_otps`, `buyer_sessions`), sur le modèle des sessions staff : code à 6 chiffres (10 min, 5 essais, 60 s entre deux envois, 5 par heure et par e-mail), session opaque de 30 jours, seules les empreintes sont stockées. Compte créé à la première connexion. Envoi par l'API Brevo (gratuit, 300 e-mails/jour, sans nom de domaine). Les commandes sont retrouvées par l'e-mail (prouvé par le code) ou par le lien au compte ; les favoris sont les likes faits en étant connecté. Aucun envoi vers les domaines réservés (`example.com`…) : les tests ne consomment pas de quota.
+
+**Conséquences.** Un acheteur ne peut jamais accéder à l'espace organisateur. Code de 6 chiffres : 5 essais sur 1 000 000 possibilités par code, et 5 codes par heure. Expéditeur Gmail : risque de classement en indésirables, à résoudre avec un nom de domaine. Le compte de démonstration (`acheteur@ticketo.bj`, code fixe public) ne reçoit pas d'e-mail.

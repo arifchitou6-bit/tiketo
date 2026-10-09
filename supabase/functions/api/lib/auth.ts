@@ -56,3 +56,41 @@ export const requireStaff = createMiddleware<AppEnv>(async (c, next) => {
   c.set("staff", { sessionId: data.id, eventId: data.event_id, staffCode: data.staff_code });
   await next();
 });
+
+// Session acheteur (compte par code e-mail) : jeton opaque, seule son empreinte est stockée.
+async function findBuyerSession(token: string) {
+  const { data, error } = await admin
+    .from("buyer_sessions")
+    .select("id, buyer_id, buyer:buyers ( email )")
+    .eq("token_hash", await sha256Hex(token))
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw fromDbError(error);
+  // deno-lint-ignore no-explicit-any
+  return data ? { sessionId: data.id, buyerId: data.buyer_id, email: (data.buyer as any).email as string } : null;
+}
+
+const buyerExpired = () => unauthorized("Session acheteur invalide ou expirée, reconnectez-vous avec votre e-mail");
+
+// Protège une route de l'espace acheteur
+export const requireBuyer = createMiddleware<AppEnv>(async (c, next) => {
+  const token = bearerToken(c.req.header("Authorization"));
+  if (!token) throw unauthorized();
+  const session = await findBuyerSession(token);
+  if (!session) throw buyerExpired();
+  c.set("buyer", session);
+  await next();
+});
+
+// Route publique qui rattache l'action au compte si l'acheteur est connecté (commande, like).
+// Un jeton présent mais invalide est refusé (401) : le front sait qu'il doit reconnecter l'acheteur.
+export const optionalBuyer = createMiddleware<AppEnv>(async (c, next) => {
+  const token = bearerToken(c.req.header("Authorization"));
+  if (token) {
+    const session = await findBuyerSession(token);
+    if (!session) throw buyerExpired();
+    c.set("buyer", session);
+  }
+  await next();
+});

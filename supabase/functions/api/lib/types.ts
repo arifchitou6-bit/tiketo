@@ -11,10 +11,18 @@ export interface StaffSession {
   staffCode: string;
 }
 
+export interface BuyerSession {
+  sessionId: string;
+  buyerId: string;
+  email: string;
+}
+
 // Variables de contexte Hono partagées par toutes les routes
 export interface AppEnv {
   Variables: {
     user: AuthUser;
     staff: StaffSession;
+    // Acheteur connecté (absent si la route accepte les visiteurs non connectés)
+    buyer?: BuyerSession;
   };
 }

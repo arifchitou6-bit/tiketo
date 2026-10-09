@@ -61,6 +61,15 @@ export async function resetRateLimits() {
   await sql("delete from public.rate_limits");
 }
 
+// Attend le début d'une fenêtre de rate limiting (minute calendaire) selon l'horloge DU SERVEUR :
+// celle du poste de test peut être décalée. Ne fait rien s'il reste au moins `minSeconds` dans la minute.
+export async function waitForFreshMinute(minSeconds = 50) {
+  const { time } = await (await fetch(`${API}/health`)).json();
+  const ms = new Date(time).getTime() % 60000;
+  if (60 - ms / 1000 < minSeconds) await new Promise((r) => setTimeout(r, 60000 - ms + 300));
+  await resetRateLimits();
+}
+
 export async function setup() {
   await waitForApi();
   await resetRateLimits();

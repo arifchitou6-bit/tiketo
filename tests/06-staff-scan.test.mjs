@@ -105,7 +105,9 @@ describe("Scan en ligne", () => {
   test("heure dans le futur ramenée à l'heure serveur ; journal complet", async () => {
     const r = await scan(kevin, A.tickets[3].qrPayload, { scannedAt: "2030-01-01T00:00:00Z" });
     assert.equal(r.body.result, "OK");
-    assert.ok(new Date(r.body.scannedAt).getTime() <= Date.now() + 5000);
+    // Comparé à l'horloge de la base (celle du poste de test peut être décalée)
+    const [{ now }] = await sql("select now()");
+    assert.ok(new Date(r.body.scannedAt).getTime() <= now.getTime() + 5000);
     const rows = await sql("select result, count(*)::int as n from scan_events where event_id = $1 group by 1 order by 1", [A.ev.id]);
     assert.deepEqual(Object.fromEntries(rows.map((x) => [x.result, x.n])), { OK: 3, DUPLICATE: 2, INVALID: 5 });
   });

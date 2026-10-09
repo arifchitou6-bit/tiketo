@@ -1,14 +1,23 @@
 // Ce fichier sature volontairement les compteurs : il s'exécute en dernier (suite séquentielle).
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { api, cleanup, createOrganizer, createPublishedEvent, resetRateLimits, setup, staffAccess } from "./helpers.mjs";
+import { API, api, cleanup, createOrganizer, createPublishedEvent, resetRateLimits, setup, staffAccess, waitForFreshMinute } from "./helpers.mjs";
+
+// Envoie n requêtes par paquets parallèles : en production, les 61 ou 101 requêtes doivent tenir dans
+// la même minute malgré la latence ; en local, une à la fois (le PC de dev limite le CPU de l'API : 504)
+const BATCH = /127\.0\.0\.1|localhost/.test(API) ? 1 : 20;
+async function burst(n, send) {
+  const statuses = [];
+  for (let i = 0; i < n; i += BATCH) {
+    statuses.push(...(await Promise.all(Array.from({ length: Math.min(BATCH, n - i) }, send))).map((r) => r.status));
+  }
+  return statuses;
+}
 
 before(async () => {
   await setup();
   // Commencer au début d'une fenêtre d'une minute pour que toutes les requêtes tombent dans la même
-  const wait = 60 - new Date().getUTCSeconds();
-  if (wait < 45) await new Promise((r) => setTimeout(r, wait * 1000 + 300));
-  await resetRateLimits();
+  await waitForFreshMinute(45);
 });
 after(async () => {
   await resetRateLimits();
@@ -40,8 +49,11 @@ describe("Limites de requêtes (rate limiting)", () => {
   });
 
   test("commandes : 60/min (IP partagées par les opérateurs mobiles)", async () => {
-    const statuses = [];
-    for (let i = 0; i < 61; i++) statuses.push((await api("POST", "/orders", { body: {} })).status);
+    // Début d'une fenêtre d'une minute, puis envoi par paquets parallèles : les 61 requêtes doivent
+    // tenir dans la même minute, même avec une connexion lente (~1 s par requête)
+    await waitForFreshMinute();
+    const statuses = await burst(60, () => api("POST", "/orders", { body: {} }));
+    statuses.push((await api("POST", "/orders", { body: {} })).status);
     assert.equal(statuses.filter((s) => s === 400).length, 60);
     assert.equal(statuses[60], 429);
   });
@@ -56,14 +68,10 @@ describe("Limite du scan comptée par agent (et non par IP)", () => {
     const agentB = (await api("POST", "/staff/login", { body: { code: agentA.code, pin: agentA.pin } })).body.token;
 
     // Démarrer au début d'une fenêtre d'une minute
-    const wait = 60 - new Date().getUTCSeconds();
-    if (wait < 50) await new Promise((r) => setTimeout(r, wait * 1000 + 300));
-    await resetRateLimits();
+    await waitForFreshMinute();
 
     const scan = (token) => api("POST", "/scan", { token, body: { qrPayload: "QR-de-test", deviceId: "d" } });
-    const statusesA = [];
-    // Envoi par paquets parallèles : les 101 scans doivent tenir dans la même minute, même à ~1 s par requête
-    for (let i = 0; i < 100; i += 20) statusesA.push(...(await Promise.all(Array.from({ length: 20 }, () => scan(agentA.token)))).map((r) => r.status));
+    const statusesA = await burst(100, () => scan(agentA.token));
     statusesA.push((await scan(agentA.token)).status);
     assert.equal(statusesA.filter((s) => s === 200).length, 100);
     assert.equal(statusesA[100], 429, "le 101e scan de l'agent A est bloqué");

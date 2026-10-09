@@ -24,7 +24,7 @@ Ce dépôt contient le **backend complet**, déployé sur **Supabase** : base Po
 | Page publique (API) | [`/public/events/afro-night-cotonou-3hhi`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/afro-night-cotonou-3hhi) · [`/public/events/jazz-sous-les-etoiles-u8u5`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/jazz-sous-les-etoiles-u8u5) |
 | Commande payée (écran de succès) | [`/orders/490879ed-0632-4f4f-963c-28c971e025c9`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/orders/490879ed-0632-4f4f-963c-28c971e025c9) |
 
-Validé en production : 55/55 tests d'intégration · test de charge à **139 scans/min** (4 agents en parallèle, 0 erreur, 0 double entrée, p95 ≈ 1,2 s depuis Cotonou, réseau compris).
+Validé en production : 66/66 tests d'intégration · test de charge à **139 scans/min** (4 agents en parallèle, 0 erreur, 0 double entrée, p95 ≈ 1,2 s depuis Cotonou, réseau compris).
 
 ---
 

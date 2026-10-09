@@ -146,6 +146,13 @@ NEXT_PUBLIC_API_URL=http://127.0.0.1:54321/functions/v1/api
 
 Le script refuse de s'exécuter deux fois sur le même compte (pas de doublons).
 
+**Remise à zéro automatique.** Les accès démo étant publics, la démo est restaurée **chaque nuit à 3 h (heure de Cotonou)** par pg_cron : tout ce qui a été modifié, clôturé, supprimé ou ajouté sur le compte de démo revient à l'état de référence. Les identifiants, liens, codes staff, PIN et QR restent identiques ; les dates sont décalées par semaines entières pour que les événements restent à venir. L'état de référence s'enregistre avec :
+
+```bash
+npm run demo:snapshot                                              # local
+node --env-file=.env.production.local scripts/demo-snapshot.mjs    # production
+```
+
 ## Tests
 
 ```bash
@@ -189,7 +196,8 @@ Dans le tableau de bord Supabase : **désactiver l'inscription publique** (Authe
 │           └── routes/             auth, events, public, orders, tickets, staff, scan, uploads
 ├── tests/                          tests d'intégration (node:test)
 ├── scripts/
-│   ├── seed-demo.mjs               données de démonstration
+│   ├── seed-demo.mjs               données de démonstration (assets/ : affiches)
+│   ├── demo-snapshot.mjs           état de référence de la remise à zéro nocturne
 │   └── load-test.mjs               test de charge
 ├── docs/API.md                     documentation de l'API (27 routes)
 ├── DECISIONS.md                    décisions techniques
@@ -218,3 +226,5 @@ Dans le tableau de bord Supabase : **désactiver l'inscription publique** (Authe
 ## Crédits
 
 Conçu et développé par **Arif** (back-end) et **Jude** (front-end) pour l'agence **WANE**.
+
+Affiches de démonstration (domaine public, CC0) : *Crowd People* par Anthony Delanoix (StockSnap) · *Musician Playing Saxophone* (Image Catalog, Flickr).

@@ -144,3 +144,19 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [ ] Vérifier le CORS en production : seules les origines `ALLOWED_ORIGINS` sont acceptées (en local, la passerelle Kong force `*`)
 - [x] README backend pro + DECISIONS.md (18 décisions) — URL de production et comptes de démo ajoutés
 - [~] Transmettre au front (Jude) l'URL de base de l'API (message prêt, envoi par Arif ; la clé anon n'est pas nécessaire : tout passe par l'API)
+
+## PHASE 9 — Retours de Jude (PRD v2) et démo
+
+**Indépendant du PRD v2**
+
+- [x] Affiches des événements de démo — 2 photos libres de droits (CC0) dans `scripts/assets/`, envoyées par le seed via `/uploads/cover`
+- [x] Remise à zéro automatique de la démo — migration `20261009000100_demo_reset.sql` : photo de référence (`demo_snapshot`) + restauration à l'identique chaque nuit à 3 h (Cotonou) par pg_cron (`demo_reset`), dates décalées par semaines entières pour rester à venir ; testé en local (vandalisme → restauration identique)
+- [ ] Production : appliquer la migration, poser les affiches sur les 2 événements, prendre la photo de référence (`npm run demo:snapshot`), vérifier la tâche pg_cron
+
+**Dépend du PRD v2 (en attente du document de Jude)**
+
+- [ ] Base de données : `category`, `country`, `timeZone`, `coverFit` (événement), `description` (catégorie), likes
+- [ ] `GET /public/events` : recherche, filtres, tri, pagination par curseur, `likesCount` ; `POST`/`DELETE /public/events/:slug/like`
+- [ ] Compte acheteur par code e-mail (OTP) : `/buyer/otp/request`, `/buyer/otp/verify`, `/buyer/me`, `/buyer/logout`, `/buyer/orders`, `/buyer/favorites` — service d'envoi d'e-mails à choisir
+- [ ] Tests des nouveautés + non-régression des 55 tests
+- [ ] Documentation, déploiement, nouvelle photo de la démo, message pour Jude

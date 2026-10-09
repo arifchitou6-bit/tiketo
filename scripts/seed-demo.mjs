@@ -5,9 +5,12 @@
 //   node scripts/seed-demo.mjs
 //   API_URL=https://<ref>.supabase.co/functions/v1/api DEMO_PASSWORD='…' node scripts/seed-demo.mjs
 //
-// Crée : 1 organisateur, 2 événements publiés, 5 catégories, 20 tickets vendus, 5 entrées scannées,
+// Crée : 1 organisateur, 2 événements publiés avec affiche, 5 catégories, 20 tickets vendus, 5 entrées scannées,
 // puis affiche les identifiants, le code staff et le PIN.
 // Refuse de s'exécuter si le compte de démo a déjà des événements (pas de doublons).
+// Ensuite : `npm run demo:snapshot` pour que la remise à zéro nocturne restaure cet état.
+
+import { readFile } from "node:fs/promises";
 
 const API_URL = (process.env.API_URL ?? "http://127.0.0.1:54321/functions/v1/api").replace(/\/$/, "");
 const DEMO_EMAIL = process.env.DEMO_EMAIL ?? "demo@ticketo.bj";
@@ -53,6 +56,21 @@ async function getOrganizerToken() {
   }
 }
 
+// Affiche envoyée comme le ferait le front ; sans Storage (ex. local allégé), l'événement est créé sans affiche
+async function uploadCover(token, file) {
+  try {
+    const bytes = await readFile(new URL(`./assets/${file}`, import.meta.url));
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: "image/jpeg" }), file);
+    const res = await fetch(`${API_URL}/uploads/cover`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: form });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()).url;
+  } catch (e) {
+    console.warn(`⚠ Affiche non envoyée (${file}) : ${e.message}`);
+    return undefined;
+  }
+}
+
 const EVENTS = [
   {
     name: "Afro Night Cotonou",
@@ -63,6 +81,7 @@ const EVENTS = [
     city: "Cotonou",
     starts: nextSaturdayAt(7, 19),
     hours: 8,
+    cover: "cover-afro-night.jpg",
     categories: [
       { name: "Standard", priceFcfa: 5000, quantity: 300 },
       { name: "VIP", priceFcfa: 15000, quantity: 60 },
@@ -78,6 +97,7 @@ const EVENTS = [
     city: "Porto-Novo",
     starts: nextSaturdayAt(21, 19),
     hours: 4,
+    cover: "cover-jazz.jpg",
     categories: [
       { name: "Pass Solo", priceFcfa: 10000, quantity: 150 },
       { name: "Pass Duo", priceFcfa: 18000, quantity: 60 },
@@ -122,6 +142,7 @@ async function main() {
         city: e.city,
         startsAt: e.starts.toISOString(),
         endsAt: new Date(e.starts.getTime() + e.hours * 3600 * 1000).toISOString(),
+        coverImageUrl: await uploadCover(token, e.cover),
         categories: e.categories,
       },
     });
@@ -166,6 +187,7 @@ async function main() {
   });
   console.log("\nExemple de ticket (succès) : " + tickets[0].qrUrl);
   console.log("=============================================");
+  console.log("\nÉtape suivante : npm run demo:snapshot (référence de la remise à zéro nocturne)");
 }
 
 main().catch((e) => {

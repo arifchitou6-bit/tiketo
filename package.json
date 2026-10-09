@@ -9,7 +9,8 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=1 \"tests/**/*.test.mjs\"",
-    "seed": "node scripts/seed-demo.mjs"
+    "seed": "node scripts/seed-demo.mjs",
+    "demo:snapshot": "node scripts/demo-snapshot.mjs"
   },
   "devDependencies": {
     "jsqr": "^1.4.0",

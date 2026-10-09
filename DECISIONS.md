@@ -150,3 +150,11 @@ Chaque décision suit le format **Contexte → Décision → Conséquences**. Le
 **Décision.** `node:test` sans framework ; chaque fichier crée et supprime ses propres comptes ; même suite exécutable contre la production (`API_URL`, `DATABASE_URL`).
 
 **Conséquences.** Les garanties (pas de survente, pas de double entrée, isolation entre organisateurs, résistance aux contournements) sont vérifiées de bout en bout.
+
+## D19. Remise à zéro de la démo par photo + restauration
+
+**Contexte.** Les accès démo sont publics (README, bouton de connexion en un clic du front). N'importe qui peut supprimer un événement ou régénérer le code staff, ce qui rendrait faux les accès publiés. Relancer le seed ne convient pas : il crée de nouveaux slugs, codes et QR.
+
+**Décision.** `demo_snapshot()` enregistre toutes les lignes du compte de démo (JSON, schéma privé `demo`) ; `demo_reset()`, lancé par pg_cron chaque nuit à 3 h (Cotonou), supprime tout ce que possède le compte et recharge la photo avec les mêmes identifiants et secrets. Les dates sont décalées du nombre minimal de semaines entières pour que le premier événement commence dans plus de 24 h.
+
+**Conséquences.** Les liens, codes staff, PIN et QR publiés restent valables indéfiniment ; la démo reste « à venir » et le jour de la semaine est conservé. Les commandes passées par des visiteurs sur la démo disparaissent chaque nuit. Après une migration qui ajoute des colonnes, il faut reprendre la photo. Les images envoyées par des visiteurs dans Storage ne sont pas supprimées (pas de suppression SQL possible dans Storage).

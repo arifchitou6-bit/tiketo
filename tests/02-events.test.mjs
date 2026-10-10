@@ -24,14 +24,14 @@ describe("Événements (CRUD organisateur)", () => {
     assert.deepEqual(ev.stats, { capacity: 220, ticketsSold: 0, revenue: 0, fillRate: 0, scannedCount: 0 });
   });
 
-  test("validation : dates inversées, prix négatif, aucune catégorie, noms en double", async () => {
+  test("validation : dates inversées, prix négatif, noms en double ; brouillon sans catégorie accepté", async () => {
     const base = { name: "Test", venue: "X", city: "Y", ...futureDates() };
     let r = await api("POST", "/events", { token: marc.token, body: { ...base, startsAt: base.endsAt, endsAt: base.startsAt, categories: [{ name: "A", priceFcfa: 1, quantity: 1 }] } });
     assert.deepEqual([r.status, r.body.error.field], [400, "endsAt"]);
     r = await api("POST", "/events", { token: marc.token, body: { ...base, categories: [{ name: "A", priceFcfa: 1, quantity: 1 }, { name: "B", priceFcfa: -5, quantity: 1 }] } });
     assert.deepEqual([r.status, r.body.error.field], [400, "categories.1.priceFcfa"]);
     r = await api("POST", "/events", { token: marc.token, body: { ...base, categories: [] } });
-    assert.deepEqual([r.status, r.body.error.field], [400, "categories"]);
+    assert.equal(r.status, 201, "brouillon sans catégorie de tickets accepté (contrôle à la publication)");
     r = await api("POST", "/events", { token: marc.token, body: { ...base, categories: [{ name: "VIP", priceFcfa: 1, quantity: 1 }, { name: "vip", priceFcfa: 2, quantity: 1 }] } });
     assert.equal(r.status, 400);
   });

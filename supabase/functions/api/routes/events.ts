@@ -13,12 +13,9 @@ import { parseJson } from "../lib/validation.ts";
 // --- Validation --------------------------------------------------------------
 
 export const EVENT_CATEGORIES = ["CONCERT", "SOIREE", "FESTIVAL", "CONFERENCE", "THEATRE", "EXPOSITION"] as const;
-// Pays couverts (PRD v2.1 §7) et fuseau horaire par défaut de chacun
+// Pays couverts (PRD v2.1 §7)
 export const EVENT_COUNTRIES = ["BJ", "CI"] as const;
-export const COUNTRY_TIME_ZONES: Record<(typeof EVENT_COUNTRIES)[number], string> = {
-  BJ: "Africa/Porto-Novo",
-  CI: "Africa/Abidjan",
-};
+// (le fuseau par défaut de chaque pays est appliqué en base : public.country_time_zone)
 
 // Fuseau IANA reconnu par le moteur (Intl lève une erreur sinon)
 function isTimeZone(tz: string) {
@@ -41,7 +38,7 @@ const categoryFields = {
     .int("Le prix doit être un entier en FCFA").min(0, "Le prix ne peut pas être négatif").max(10_000_000, "Prix trop élevé"),
   quantity: z.number({ required_error: "La quantité est requise", invalid_type_error: "La quantité doit être un nombre" })
     .int("La quantité doit être un entier").min(1, "Au moins 1 ticket").max(100_000, "100 000 tickets maximum"),
-  description: z.string().trim().max(300, "300 caractères maximum").optional(),
+  description: z.string().trim().max(80, "80 caractères maximum").optional(),
 };
 
 const newCategorySchema = z.object(categoryFields).strict();
@@ -65,26 +62,26 @@ const eventFields = {
   category: z.enum(EVENT_CATEGORIES, {
     errorMap: () => ({ message: `Catégorie invalide (${EVENT_CATEGORIES.join(", ")})` }),
   }),
-  country: z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, "Code pays ISO à 2 lettres attendu (ex. BJ)"),
+  country: z.string().trim().toUpperCase().pipe(z.enum(EVENT_COUNTRIES, {
+    errorMap: () => ({ message: `Pays invalide (${EVENT_COUNTRIES.join(" ou ")})` }),
+  })),
   timeZone: z.string().trim().max(64).refine(isTimeZone, "Fuseau horaire invalide (ex. Africa/Porto-Novo)"),
   coverFit: z.enum(["cover", "contain"], { errorMap: () => ({ message: "coverFit : « cover » ou « contain »" }) }),
 };
 
+// Brouillon : seul le nom est obligatoire (PRD v2.1 §8.5). Le reste est contrôlé à la publication.
 const createEventSchema = z
   .object({
-    ...eventFields,
+    ...Object.fromEntries(Object.entries(eventFields).map(([k, v]) => [k, v.optional()])) as {
+      [K in keyof typeof eventFields]: z.ZodOptional<(typeof eventFields)[K]>;
+    },
+    name: eventFields.name,
     description: eventFields.description.default(""),
-    coverImageUrl: eventFields.coverImageUrl.optional(),
-    category: eventFields.category.optional(),
-    country: eventFields.country.optional(),
-    timeZone: eventFields.timeZone.optional(),
-    coverFit: eventFields.coverFit.optional(),
-    categories: z.array(newCategorySchema, { required_error: "Au moins une catégorie est requise" })
-      .min(1, "Au moins une catégorie est requise").max(10, "10 catégories maximum")
-      .refine(uniqueNames, "Deux catégories ne peuvent pas avoir le même nom"),
+    categories: z.array(newCategorySchema).max(10, "10 catégories maximum")
+      .refine(uniqueNames, "Deux catégories ne peuvent pas avoir le même nom").default([]),
   })
   .strict()
-  .refine((e) => new Date(e.endsAt) > new Date(e.startsAt), {
+  .refine((e) => !e.startsAt || !e.endsAt || new Date(e.endsAt) > new Date(e.startsAt), {
     message: "La date de fin doit être après la date de début",
     path: ["endsAt"],
   });
@@ -94,7 +91,8 @@ const patchEventSchema = z
     ...Object.fromEntries(Object.entries(eventFields).map(([k, v]) => [k, v.optional()])) as {
       [K in keyof typeof eventFields]: z.ZodOptional<(typeof eventFields)[K]>;
     },
-    categories: z.array(editCategorySchema).min(1, "Au moins une catégorie est requise").max(10, "10 catégories maximum")
+    // Liste vide acceptée pour un brouillon ; un événement publié en garde au moins une (contrôle en base)
+    categories: z.array(editCategorySchema).max(10, "10 catégories maximum")
       .refine(uniqueNames, "Deux catégories ne peuvent pas avoir le même nom").optional(),
   })
   .strict()

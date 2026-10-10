@@ -25,7 +25,7 @@ describe("Liste et recherche publique", () => {
       categories: [{ name: "Unique", priceFcfa: 8000, quantity: 10 }, { name: "VIP", priceFcfa: 20000, quantity: 5 }],
     });
     ev.soiree = await createPublishedEvent(orga.token, { name: `Soirée ${TAG}`, category: "SOIREE", ...at(5) });
-    ev.lome = await createPublishedEvent(orga.token, { name: `Festival ${TAG}`, category: "FESTIVAL", country: "TG", city: "Lomé", ...at(20) });
+    ev.lome = await createPublishedEvent(orga.token, { name: `Festival ${TAG}`, category: "FESTIVAL", country: "CI", city: "Abidjan", ...at(20) });
     ev.draft = await createEvent(orga.token, { name: `Brouillon ${TAG}`, ...at(3) });
     ev.closed = await createPublishedEvent(orga.token, { name: `Clos ${TAG}`, ...at(4) });
     await api("POST", `/events/${ev.closed.id}/close`, { token: orga.token });
@@ -51,7 +51,7 @@ describe("Liste et recherche publique", () => {
 
   test("recherche insensible aux accents et à la casse, tous les mots requis, sur le nom, le lieu et la ville", async () => {
     assert.deepEqual((await list({ q: `elegance ${TAG.toUpperCase()}` })).body.events.map((e) => e.id), [ev.concert.id]);
-    assert.deepEqual((await list({ q: `${TAG} lome` })).body.events.map((e) => e.id), [ev.lome.id]);
+    assert.deepEqual((await list({ q: `${TAG} abidjan` })).body.events.map((e) => e.id), [ev.lome.id]);
     assert.deepEqual((await list({ q: `${TAG} introuvable` })).body.events, []);
     // La description n'est pas cherchée (PRD v2.1 §8.1)
     await api("PATCH", `/events/${ev.soiree.id}`, { token: orga.token, body: { description: "motcachedansladescription" } });

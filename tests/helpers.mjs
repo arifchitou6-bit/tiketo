@@ -103,7 +103,7 @@ export function futureDates(daysAhead = 30, hours = 6) {
 export async function createEvent(token, overrides = {}) {
   const r = await api("POST", "/events", {
     token,
-    body: { name: "Soirée Test", venue: "Le Code Bar", city: "Cotonou", ...futureDates(), categories: DEFAULT_CATEGORIES, ...overrides },
+    body: { name: "Soirée Test", category: "SOIREE", venue: "Le Code Bar", city: "Cotonou", ...futureDates(), categories: DEFAULT_CATEGORIES, ...overrides },
   });
   if (r.status !== 201) throw new Error(`createEvent : HTTP ${r.status} ${JSON.stringify(r.body)}`);
   return r.body.event;

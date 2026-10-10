@@ -21,7 +21,7 @@ describe("Parcours complet : les chiffres concordent sur toutes les routes", () 
   before(async () => {
     orga = await createOrganizer("cross");
     ev = await createPublishedEvent(orga.token, {
-      name: `Afro Live ${TAG}`, category: "CONCERT", country: "TG", city: "Lomé", timeZone: "Africa/Lome", coverFit: "contain",
+      name: `Afro Live ${TAG}`, category: "CONCERT", country: "CI", city: "Abidjan", coverFit: "contain",
       categories: [{ name: "Standard", priceFcfa: 5000, quantity: 50, description: "Accès général" }, { name: "VIP", priceFcfa: 15000, quantity: 5 }],
     });
     [std, vip] = ev.categories;
@@ -58,7 +58,7 @@ describe("Parcours complet : les chiffres concordent sur toutes les routes", () 
     const order = (await api("GET", `/orders/${paid.order.id}`)).body;
     assert.deepEqual([order.order.status, order.order.totalAmount, order.tickets.length], ["PAID", 25000, 3]);
     assert.deepEqual([order.order.event.category, order.order.event.timeZone, order.order.event.country, order.order.event.coverFit],
-      ["CONCERT", "Africa/Lome", "TG", "contain"]);
+      ["CONCERT", "Africa/Abidjan", "CI", "contain"]);
 
     // Avec deviceId, le détail public est lu en direct (sans le cache de 30 s des visiteurs anonymes)
     const pub = (await api("GET", `/public/events/${ev.slug}?deviceId=appareil-1-xxxx`)).body.event;
@@ -84,7 +84,7 @@ describe("Parcours complet : les chiffres concordent sur toutes les routes", () 
 
   test("scanner : index hors ligne = tickets vendus ; scan → compteurs à jour partout", async () => {
     staff = await staffAccess(orga.token, ev.id);
-    assert.deepEqual([staff.login.timeZone, staff.login.city], ["Africa/Lome", "Lomé"], "heure locale du lieu sur le scanner");
+    assert.deepEqual([staff.login.timeZone, staff.login.city], ["Africa/Abidjan", "Abidjan"], "fuseau déduit du pays, affiché sur le scanner");
     assert.deepEqual(new Set(staff.login.ticketHashes), new Set(paid.tickets.map((t) => sha256(t.qrPayload))));
 
     const r = await api("POST", "/scan", { token: staff.token, body: { qrPayload: paid.tickets[0].qrPayload, deviceId: "porte-1" } });

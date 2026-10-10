@@ -164,7 +164,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [x] Étape 1 — Liste publique et likes (§8.1, §8.3) ✅ en production (03c : 10/10) : 20 par page, recherche nom/lieu/ville, tri popular likes → ventes → date (curseur adapté), pays BJ|CI, `GET /public/likes?deviceId=` → `{ slugs }` — migration `20261009000500_public_list_v21.sql`, 3 tests ajoutés (03c : 10/10), doc à jour
 - [x] Étape 2 — Compte acheteur par téléphone (§8.4) : `{ phone }`, `devCode` (désactivable), session au format organisateur + `/auth/refresh`, `/buyer/orders` → `{ order, tickets }[]` payées, codes d'erreur du PRD — ✅ en production le 10 octobre (04b : 9/9, testé directement en production : environnement local trop lent)
 - [x] Étape 3 — Organisateur (§8.5) : brouillon avec le nom seul, contrôles à la publication (catégorie obligatoire), description 80 caractères, fuseau déduit du pays — migration `20261009000600_organizer_drafts.sql`, ✅ en production : suite complète 94/94 (03b : 5/5)
-- [ ] Étape 4 — Démo (numéros +22901…), tests, doc, déploiement unique en production
+- [x] Étape 4 — Démo : 11 numéros convertis au format +22901… en production, nouvelle photo de référence ; « Retrouver mes tickets » vérifié en production (+2290197112233 → 2 tickets, renouvellement, déconnexion) ; déploiements faits étape par étape (tests directement en production)
 
-- [ ] Tests des nouveautés + non-régression des 55 tests
-- [ ] Documentation, déploiement, nouvelle photo de la démo, message pour Jude
+- [x] Tests des nouveautés + non-régression : 94/94 en production
+- [x] Documentation (docs/API.md conforme au PRD v2.1), déploiement, nouvelle photo de la démo, message pour Jude (envoi par Arif)

@@ -106,42 +106,20 @@ const EVENTS = [
 ];
 
 // 20 tickets au total : [événement, catégorie, quantité, acheteur, téléphone, opérateur]
+// Numéros au format béninois à 10 chiffres (PRD v2.1 §8.7) : +229 01XXXXXXXX
 const ORDERS = [
-  [0, 0, 2, "Aïcha Kpèdétin", "+22997112233", "mtn"],
-  [0, 1, 1, "Koffi Agbèssi", "+22996223344", "moov"],
-  [0, 0, 3, "Fèmi Hounkpè", "+22961334455", "mtn"],
-  [0, 1, 2, "Rodrigue d'Almeida", "+22995445566", "celtiis"],
-  [0, 2, 1, "Grâce Adjovi", "+22997556677", "mtn"],
-  [0, 0, 1, "Sènan Gbaguidi", "+22990667788", "moov"],
-  [0, 0, 2, "Mariam Bio Tchané", "+22966778899", "mtn"],
-  [1, 0, 2, "Jean-Eudes Zinsou", "+22997889900", "celtiis"],
-  [1, 1, 1, "Nadège Houngbédji", "+22996990011", "mtn"],
-  [1, 0, 3, "Ulrich Adéoti", "+22961001122", "moov"],
-  [1, 1, 2, "Carine Sossa", "+22997012345", "mtn"],
+  [0, 0, 2, "Aïcha Kpèdétin", "+2290197112233", "mtn"],
+  [0, 1, 1, "Koffi Agbèssi", "+2290196223344", "moov"],
+  [0, 0, 3, "Fèmi Hounkpè", "+2290161334455", "mtn"],
+  [0, 1, 2, "Rodrigue d'Almeida", "+2290195445566", "celtiis"],
+  [0, 2, 1, "Grâce Adjovi", "+2290197556677", "mtn"],
+  [0, 0, 1, "Sènan Gbaguidi", "+2290190667788", "moov"],
+  [0, 0, 2, "Mariam Bio Tchané", "+2290166778899", "mtn"],
+  [1, 0, 2, "Jean-Eudes Zinsou", "+2290197889900", "celtiis"],
+  [1, 1, 1, "Nadège Houngbédji", "+2290196990011", "mtn"],
+  [1, 0, 3, "Ulrich Adéoti", "+2290161001122", "moov"],
+  [1, 1, 2, "Carine Sossa", "+2290197012345", "mtn"],
 ];
-
-// Compte acheteur de démonstration (code fixe, aucun e-mail envoyé) : 2 commandes payées et 2 favoris
-export const DEMO_BUYER = { email: "acheteur@ticketo.bj", code: "246810" };
-
-async function seedDemoBuyer(events) {
-  const { session } = await api("POST", "/buyer/otp/verify", {
-    body: { email: DEMO_BUYER.email, code: DEMO_BUYER.code, deviceId: "demo-acheteur-telephone" },
-  });
-  const buyer = { name: "Awa Houénou", phone: "+22997556600", provider: "mtn" };
-  const purchases = [[0, 1, 2], [1, 0, 1]]; // [événement, catégorie, quantité]
-  for (const [evIdx, catIdx, quantity] of purchases) {
-    const ev = events[evIdx];
-    const { order } = await api("POST", "/orders", {
-      token: session.token,
-      body: { eventSlug: ev.slug, items: [{ categoryId: ev.categories[catIdx].id, quantity }], buyer },
-    });
-    await api("POST", `/orders/${order.id}/simulate-payment`);
-  }
-  for (const ev of events) {
-    await api("POST", `/public/events/${ev.slug}/like`, { token: session.token, body: { deviceId: "demo-acheteur-telephone" } });
-  }
-  console.log(`✔ Compte acheteur ${DEMO_BUYER.email} : ${purchases.length} commandes payées, ${events.length} favoris`);
-}
 
 async function main() {
   console.log(`TICKETO — seed de démonstration\nAPI : ${API_URL}\n`);
@@ -201,11 +179,10 @@ async function main() {
   }
   console.log(`✔ ${toScan.length} entrées scannées sur « ${created[0].name} »`);
 
-  await seedDemoBuyer(created);
 
   console.log("\n================ ACCÈS DÉMO ================");
   console.log(`Organisateur : ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
-  console.log(`Acheteur     : ${DEMO_BUYER.email} / code ${DEMO_BUYER.code}`);
+  console.log(`Acheteur     : « Retrouver mes tickets » avec ${ORDERS[0][4]} (code affiché à l'écran : devCode)`);
   created.forEach((ev, i) => {
     console.log(`\n${ev.name}`);
     console.log(`  Page publique : ${ev.publicUrl}`);

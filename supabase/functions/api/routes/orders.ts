@@ -2,13 +2,12 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import { optionalBuyer } from "../lib/auth.ts";
 import { env } from "../lib/env.ts";
 import { ApiError, fromDbError, notFound } from "../lib/errors.ts";
 import { rateLimit } from "../lib/rateLimit.ts";
 import { admin } from "../lib/supabase.ts";
 import type { AppEnv } from "../lib/types.ts";
-import { emailSchema, nameSchema, parseJson } from "../lib/validation.ts";
+import { emailSchema, nameSchema, parseJson, phoneSchema } from "../lib/validation.ts";
 
 // Une commande non payée expire au bout de 15 minutes (PRD §7)
 export const ORDER_TTL_MINUTES = 15;
@@ -31,9 +30,7 @@ const createOrderSchema = z
       .object({
         name: nameSchema,
         // Les espaces, points, tirets et parenthèses sont retirés : "+229 97 00 00 00" -> "+22997000000"
-        phone: z.string({ required_error: "Le numéro WhatsApp est requis" })
-          .transform((v) => v.replace(/[\s.\-()]/g, ""))
-          .pipe(z.string().regex(/^\+?[0-9]{8,15}$/, "Numéro de téléphone invalide")),
+        phone: phoneSchema,
         email: z.union([z.literal(""), emailSchema]).optional().transform((v) => v || undefined),
         provider: z.enum(["mtn", "moov", "celtiis"], {
           errorMap: () => ({ message: "Opérateur invalide (mtn, moov ou celtiis)" }),
@@ -134,11 +131,9 @@ const PAYMENT_FAILURES: Record<string, string> = {
 export const orderRoutes = new Hono<AppEnv>();
 
 // 60/min par IP : les opérateurs mobiles partagent souvent une même IP entre de nombreux abonnés (CGNAT)
-// Acheteur connecté (facultatif) : la commande rejoint son compte ; e-mail du compte par défaut.
-orderRoutes.post("/", rateLimit("orders", 60), optionalBuyer, async (c) => {
+// Le compte acheteur retrouve ensuite la commande par le numéro saisi (PRD v2.1 §7) : rien à rattacher ici.
+orderRoutes.post("/", rateLimit("orders", 60), async (c) => {
   const body = await parseJson(c, createOrderSchema);
-  const buyer = c.get("buyer");
-  if (buyer && !body.buyer.email) body.buyer.email = buyer.email;
 
   const { data: orderId, error } = await admin.rpc("create_order", {
     p_slug: body.eventSlug,
@@ -146,14 +141,6 @@ orderRoutes.post("/", rateLimit("orders", 60), optionalBuyer, async (c) => {
     p_buyer: body.buyer,
   });
   if (error) throw fromDbError(error);
-
-  if (buyer) {
-    const [linked, profile] = await Promise.all([
-      admin.from("orders").update({ buyer_id: buyer.buyerId }).eq("id", orderId),
-      admin.from("buyers").update({ name: body.buyer.name, phone: body.buyer.phone }).eq("id", buyer.buyerId),
-    ]);
-    for (const r of [linked, profile]) if (r.error) throw fromDbError(r.error);
-  }
 
   const order = await loadOrder(orderId);
   return c.json({

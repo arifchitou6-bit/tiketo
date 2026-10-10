@@ -3,12 +3,13 @@
 import { Hono } from "hono";
 import type { Session } from "@supabase/supabase-js";
 import { z } from "zod";
-import { requireOrganizer } from "../lib/auth.ts";
+import { randomToken, requireOrganizer, sha256Hex } from "../lib/auth.ts";
 import { rateLimit } from "../lib/rateLimit.ts";
-import { ApiError } from "../lib/errors.ts";
+import { ApiError, fromDbError } from "../lib/errors.ts";
 import { admin, anonClient } from "../lib/supabase.ts";
 import type { AppEnv } from "../lib/types.ts";
 import { emailSchema, nameSchema, parseJson } from "../lib/validation.ts";
+import { BUYER_ACCESS_SECONDS, buyerSession } from "./buyer.ts";
 
 const signupSchema = z
   .object({
@@ -96,8 +97,24 @@ authRoutes.post("/login", authLimit, async (c) => {
   return c.json({ user: await loadUser(session.user.id), session: toSession(session) });
 });
 
+// Renouvelle une session organisateur OU acheteur (PRD v2.1 §8.4 : même renouvellement).
+// Les jetons de renouvellement acheteur sont opaques (64 caractères hexadécimaux) ; rotation à chaque appel.
 authRoutes.post("/refresh", authLimit, async (c) => {
   const body = await parseJson(c, refreshSchema);
+  if (/^[0-9a-f]{64}$/.test(body.refreshToken)) {
+    const accessToken = randomToken();
+    const refreshToken = randomToken();
+    const { data, error } = await admin.rpc("buyer_refresh", {
+      p_refresh_hash: await sha256Hex(body.refreshToken),
+      p_token_hash: await sha256Hex(accessToken),
+      p_new_refresh_hash: await sha256Hex(refreshToken),
+      p_access_seconds: BUYER_ACCESS_SECONDS,
+    });
+    if (error) throw fromDbError(error);
+    const result = data as { ok: boolean; expiresAt?: string };
+    if (!result.ok) throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Session expirée, veuillez vous reconnecter");
+    return c.json({ session: buyerSession(accessToken, refreshToken, result.expiresAt!) });
+  }
   const { data, error } = await anonClient().auth.refreshSession({ refresh_token: body.refreshToken });
   if (error || !data.session) {
     throw new ApiError(401, "INVALID_REFRESH_TOKEN", "Session expirée, veuillez vous reconnecter");

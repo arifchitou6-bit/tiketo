@@ -82,6 +82,12 @@ export const emailSchema = z
   .max(254, "Email trop long")
   .email("Email invalide");
 
+// Numéro WhatsApp / Mobile Money : espaces, points, tirets et parenthèses retirés
+// ("+229 01 97 00 12 34" → "+2290197001234", PRD v2.1 §8.7)
+export const phoneSchema = z.string({ required_error: "Le numéro est requis" })
+  .transform((v) => v.replace(/[\s.\-()]/g, ""))
+  .pipe(z.string().regex(/^\+?[0-9]{8,15}$/, "Numéro de téléphone invalide"));
+
 export const nameSchema = z
   .string({ required_error: "Le nom est requis" })
   .trim()

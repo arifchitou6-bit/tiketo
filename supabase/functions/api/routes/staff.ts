@@ -2,7 +2,7 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import { requireStaff, sha256Hex } from "../lib/auth.ts";
+import { randomToken, requireStaff, sha256Hex } from "../lib/auth.ts";
 import { fromDbError } from "../lib/errors.ts";
 import { rateLimit } from "../lib/rateLimit.ts";
 import { admin } from "../lib/supabase.ts";
@@ -60,7 +60,7 @@ staffRoutes.post("/login", rateLimit("staff-login", 10), async (c) => {
   const body = await parseJson(c, loginSchema);
 
   // Jeton opaque de 256 bits ; seule son empreinte est stockée en base.
-  const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
+  const token = randomToken();
 
   const { data, error } = await admin.rpc("staff_login", {
     p_code: body.code,

@@ -19,7 +19,7 @@ Ce dépôt contient le **backend complet**, déployé sur **Supabase** : base Po
 | Rôle | Accès |
 |---|---|
 | Organisateur | `demo@ticketo.bj` / `Demo-rL8LuShU-2026` |
-| Acheteur | `acheteur@ticketo.bj` · code de connexion `246810` (aucun e-mail envoyé) |
+| Acheteur (« Retrouver mes tickets ») | numéro `+2290197112233` · le code s'affiche à l'écran (démo, aucun SMS) |
 | Agent de porte — Afro Night Cotonou | code `X3RSGG` · PIN `4097` |
 | Agent de porte — Jazz sous les étoiles | code `93395Z` · PIN `1315` |
 | Page publique (API) | [`/public/events/afro-night-cotonou-3hhi`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/afro-night-cotonou-3hhi) · [`/public/events/jazz-sous-les-etoiles-u8u5`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/public/events/jazz-sous-les-etoiles-u8u5) |
@@ -50,7 +50,7 @@ Validé en production : 81/81 tests d'intégration · test de charge à **139 sc
 | Espace | Ce que fait le backend |
 |---|---|
 | **Organisateur** | Inscription / connexion · création et édition d'événements avec 1 à 10 catégories de tickets · publication avec lien court · dashboard temps réel (ventes, recette, remplissage, entrées) · liste des commandes et export CSV · génération d'un code d'accès staff |
-| **Acheteur** | Accueil et recherche (filtres, likes) · compte sans mot de passe (code par e-mail) avec historique des commandes et favoris · page publique de l'événement (places restantes en temps réel) · commande · paiement Mobile Money simulé (MTN, Moov, Celtiis) · tickets avec QR code téléchargeable en PNG |
+| **Acheteur** | Accueil et recherche (filtres, likes) · compte facultatif sans mot de passe (numéro + code) pour retrouver ses tickets et ses favoris sur n'importe quel téléphone · page publique de l'événement (places restantes en temps réel) · commande · paiement Mobile Money simulé (MTN, Moov, Celtiis) · tickets avec QR code téléchargeable en PNG |
 | **Staff à l'entrée** | Connexion par code + PIN · scan avec réponse immédiate (valide / déjà scanné / invalide) · **mode hors ligne** avec synchronisation automatique au retour du réseau |
 
 Garanties métier vérifiées par les tests :
@@ -160,7 +160,7 @@ node --env-file=.env.production.local scripts/demo-snapshot.mjs    # production
 npm test
 ```
 
-90 tests d'intégration couvrant l'authentification, le compte acheteur (code par e-mail, commandes, favoris), les événements, la page publique, la recherche et les likes, la cohérence entre les routes (tests croisés), les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
+90 tests d'intégration couvrant l'authentification, le compte acheteur (numéro + code, session renouvelable, commandes, favoris), les événements, la page publique, la recherche et les likes, la cohérence entre les routes (tests croisés), les commandes et le paiement, les QR codes (relus par un décodeur indépendant), le staff, le scan en ligne et hors ligne, le dashboard, l'export CSV, le rate limiting et la sécurité (tentatives de contournement de l'API). Chaque fichier crée ses propres données et les supprime ; les données de démonstration ne sont pas touchées.
 
 | Variable | Usage |
 |---|---|

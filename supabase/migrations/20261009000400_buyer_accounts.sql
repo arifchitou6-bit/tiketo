@@ -1,34 +1,36 @@
--- TICKETO — PRD v2 : compte acheteur par code à usage unique envoyé par e-mail (OTP)
+-- TICKETO — PRD v2.1 §7 et §8.4 : compte acheteur, connexion par numéro de téléphone et code à 6 chiffres
+-- Démo : aucun SMS, le code est renvoyé à l'écran (devCode, désactivable côté API).
 -- Comptes séparés des organisateurs (Supabase Auth) : un acheteur n'a jamais accès à l'espace organisateur,
 -- et l'inscription publique de Supabase Auth reste désactivée.
 -- Seules les empreintes (sha256) des codes et des jetons de session sont stockées.
 
 create table public.buyers (
   id            uuid primary key default gen_random_uuid(),
-  email         text not null unique check (email = lower(email) and char_length(email) <= 254),
-  name          text check (char_length(name) <= 120),            -- dernier nom saisi à la commande (pré-remplissage)
-  phone         text check (phone ~ '^\+?[0-9]{8,15}$'),           -- dernier numéro saisi à la commande
+  phone         text not null unique check (phone ~ '^\+?[0-9]{8,15}$'),   -- ex. +2290197001234
   created_at    timestamptz not null default now(),
   last_login_at timestamptz not null default now()
 );
 
--- Un code actif au plus par e-mail ; remplacé à chaque nouvelle demande
+-- Un code actif au plus par numéro ; remplacé à chaque nouvelle demande
 create table public.buyer_otps (
-  email      text primary key,
-  code_hash  text not null,                 -- sha256("<email>:<code>")
+  phone      text primary key,
+  code_hash  text not null,                 -- sha256("<numéro>:<code>")
   attempts   integer not null default 0,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null
 );
 
+-- Session au même format que l'organisateur : jeton d'accès court + jeton de renouvellement (rotation)
 create table public.buyer_sessions (
-  id         uuid primary key default gen_random_uuid(),
-  buyer_id   uuid not null references public.buyers (id) on delete cascade,
-  token_hash text not null unique,
-  device_id  text,
-  created_at timestamptz not null default now(),
-  expires_at timestamptz not null,
-  revoked_at timestamptz
+  id                 uuid primary key default gen_random_uuid(),
+  buyer_id           uuid not null references public.buyers (id) on delete cascade,
+  token_hash         text not null unique,     -- jeton d'accès
+  expires_at         timestamptz not null,
+  refresh_hash       text not null unique,     -- jeton de renouvellement
+  refresh_expires_at timestamptz not null,
+  device_id          text,
+  created_at         timestamptz not null default now(),
+  revoked_at         timestamptz
 );
 create index buyer_sessions_buyer_idx on public.buyer_sessions (buyer_id);
 
@@ -36,34 +38,32 @@ alter table public.buyers enable row level security;          -- aucune politiqu
 alter table public.buyer_otps enable row level security;
 alter table public.buyer_sessions enable row level security;
 
--- Commandes passées en étant connecté ; les autres sont retrouvées par l'e-mail (prouvé par le code)
-alter table public.orders add column buyer_id uuid references public.buyers (id) on delete set null;
-create index orders_buyer_idx on public.orders (buyer_id) where buyer_id is not null;
-create index orders_buyer_email_idx on public.orders (buyer_email) where buyer_email is not null;
+-- Commandes d'un acheteur retrouvées par Order.buyerPhone = Buyer.phone (pas de clé étrangère, PRD §7)
+create index orders_buyer_phone_idx on public.orders (buyer_phone, paid_at desc) where status = 'PAID';
 
 -- Likes faits en étant connecté = favoris du compte
 alter table public.event_likes add column buyer_id uuid references public.buyers (id) on delete set null;
 create index event_likes_buyer_idx on public.event_likes (buyer_id) where buyer_id is not null;
 
 -- ---------------------------------------------------------------------------
--- Demande de code : délai minimal entre deux envois pour un même e-mail
+-- Demande de code : délai minimal entre deux envois pour un même numéro
 -- Renvoie { ok: true } ou { ok: false, retryAfter: secondes }
 -- ---------------------------------------------------------------------------
-create or replace function public.buyer_otp_store(p_email text, p_code_hash text, p_ttl_seconds integer,
+create or replace function public.buyer_otp_store(p_phone text, p_code_hash text, p_ttl_seconds integer,
                                                   p_cooldown_seconds integer)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   v_last timestamptz;
 begin
-  select created_at into v_last from public.buyer_otps where email = p_email for update;
+  select created_at into v_last from public.buyer_otps where phone = p_phone for update;
   if v_last is not null and v_last > now() - make_interval(secs => p_cooldown_seconds) then
     return jsonb_build_object('ok', false,
       'retryAfter', ceil(extract(epoch from (v_last + make_interval(secs => p_cooldown_seconds) - now())))::integer);
   end if;
 
-  insert into public.buyer_otps (email, code_hash, attempts, created_at, expires_at)
-  values (p_email, p_code_hash, 0, now(), now() + make_interval(secs => p_ttl_seconds))
-  on conflict (email) do update
+  insert into public.buyer_otps (phone, code_hash, attempts, created_at, expires_at)
+  values (p_phone, p_code_hash, 0, now(), now() + make_interval(secs => p_ttl_seconds))
+  on conflict (phone) do update
     set code_hash = excluded.code_hash, attempts = 0, created_at = excluded.created_at, expires_at = excluded.expires_at;
   return jsonb_build_object('ok', true);
 end;
@@ -71,92 +71,77 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- Vérification du code et ouverture de session
--- p_skip_code : compte de démonstration uniquement (code fixe contrôlé par l'API)
 -- Ne lève pas d'exception sur un mauvais code : le compteur d'essais doit être enregistré.
--- Renvoie { ok: true, buyerId, sessionExpiresAt } ou { ok: false, reason, attemptsLeft? }
+-- Renvoie { ok: true, buyerId, expiresAt, refreshExpiresAt } ou { ok: false, reason, attemptsLeft? }
 -- ---------------------------------------------------------------------------
-create or replace function public.buyer_otp_verify(p_email text, p_code_hash text, p_token_hash text,
-                                                   p_session_days integer, p_device_id text, p_max_attempts integer,
-                                                   p_skip_code boolean default false)
+create or replace function public.buyer_otp_verify(p_phone text, p_code_hash text, p_token_hash text, p_refresh_hash text,
+                                                   p_access_seconds integer, p_refresh_days integer, p_device_id text,
+                                                   p_max_attempts integer)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   v_otp public.buyer_otps;
   v_buyer_id uuid;
-  v_expires timestamptz := now() + make_interval(days => p_session_days);
+  v_expires timestamptz := now() + make_interval(secs => p_access_seconds);
+  v_refresh_expires timestamptz := now() + make_interval(days => p_refresh_days);
 begin
-  if not p_skip_code then
-    select * into v_otp from public.buyer_otps where email = p_email for update;
-    if v_otp is null then
-      return jsonb_build_object('ok', false, 'reason', 'OTP_INVALID', 'attemptsLeft', 0);
-    end if;
-    if v_otp.expires_at <= now() then
-      delete from public.buyer_otps where email = p_email;
-      return jsonb_build_object('ok', false, 'reason', 'OTP_EXPIRED');
-    end if;
-    if v_otp.attempts >= p_max_attempts then
-      return jsonb_build_object('ok', false, 'reason', 'OTP_TOO_MANY_ATTEMPTS');
-    end if;
-    if v_otp.code_hash <> p_code_hash then
-      update public.buyer_otps set attempts = attempts + 1 where email = p_email;
-      return jsonb_build_object('ok', false, 'reason',
-        case when v_otp.attempts + 1 >= p_max_attempts then 'OTP_TOO_MANY_ATTEMPTS' else 'OTP_INVALID' end,
-        'attemptsLeft', p_max_attempts - v_otp.attempts - 1);
-    end if;
-    delete from public.buyer_otps where email = p_email; -- code à usage unique
+  select * into v_otp from public.buyer_otps where phone = p_phone for update;
+  if v_otp.phone is null then
+    return jsonb_build_object('ok', false, 'reason', 'OTP_INVALID', 'attemptsLeft', 0);
   end if;
+  if v_otp.expires_at <= now() then
+    delete from public.buyer_otps where phone = p_phone;
+    return jsonb_build_object('ok', false, 'reason', 'OTP_EXPIRED');
+  end if;
+  if v_otp.attempts >= p_max_attempts then
+    return jsonb_build_object('ok', false, 'reason', 'OTP_TOO_MANY_ATTEMPTS');
+  end if;
+  if v_otp.code_hash <> p_code_hash then
+    update public.buyer_otps set attempts = attempts + 1 where phone = p_phone;
+    return jsonb_build_object('ok', false, 'reason',
+      case when v_otp.attempts + 1 >= p_max_attempts then 'OTP_TOO_MANY_ATTEMPTS' else 'OTP_INVALID' end,
+      'attemptsLeft', p_max_attempts - v_otp.attempts - 1);
+  end if;
+  delete from public.buyer_otps where phone = p_phone; -- code à usage unique
 
-  insert into public.buyers (email) values (p_email)
-  on conflict (email) do update set last_login_at = now()
+  insert into public.buyers (phone) values (p_phone)
+  on conflict (phone) do update set last_login_at = now()
   returning id into v_buyer_id;
 
-  insert into public.buyer_sessions (buyer_id, token_hash, device_id, expires_at)
-  values (v_buyer_id, p_token_hash, p_device_id, v_expires);
+  insert into public.buyer_sessions (buyer_id, token_hash, expires_at, refresh_hash, refresh_expires_at, device_id)
+  values (v_buyer_id, p_token_hash, v_expires, p_refresh_hash, v_refresh_expires, p_device_id);
 
   -- Les likes faits sur cet appareil avant la connexion rejoignent les favoris du compte
   if p_device_id is not null then
     update public.event_likes set buyer_id = v_buyer_id where device_id = p_device_id and buyer_id is null;
   end if;
 
-  return jsonb_build_object('ok', true, 'buyerId', v_buyer_id, 'sessionExpiresAt', v_expires);
+  return jsonb_build_object('ok', true, 'buyerId', v_buyer_id, 'expiresAt', v_expires, 'refreshExpiresAt', v_refresh_expires);
 end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Commandes de l'acheteur : passées connecté OU avec son e-mail
+-- Renouvellement (POST /auth/refresh avec un jeton acheteur) : rotation des deux jetons
+-- Renvoie { ok: true, buyerId, expiresAt } ou { ok: false }
 -- ---------------------------------------------------------------------------
-create or replace function public.buyer_orders(p_buyer_id uuid, p_email text, p_status public.order_status,
-                                               p_limit integer, p_offset integer)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  with mine as (
-    select o.* from public.orders o
-    where (o.buyer_id = p_buyer_id or o.buyer_email = p_email)
-      and (p_status is null or o.status = p_status)
-  )
-  select jsonb_build_object(
-    'total', (select count(*) from mine),
-    'orders', coalesce((
-      select jsonb_agg(row_to_json(x) order by x."createdAt" desc)
-      from (
-        select
-          o.id, o.status, o.total_amount as "totalAmount", o.payment_provider as "paymentProvider",
-          o.payment_reference as "paymentReference", o.created_at as "createdAt", o.paid_at as "paidAt",
-          (select coalesce(sum(i.quantity), 0)::int from public.order_items i where i.order_id = o.id) as "ticketCount",
-          (select string_agg(i.quantity || '× ' || c.name, ', ' order by c.position)
-             from public.order_items i join public.ticket_categories c on c.id = i.category_id
-            where i.order_id = o.id) as summary,
-          jsonb_build_object(
-            'id', e.id, 'slug', e.slug, 'name', e.name, 'category', e.category,
-            'venue', e.venue, 'city', e.city, 'country', e.country, 'timeZone', e.time_zone,
-            'startsAt', e.starts_at, 'endsAt', e.ends_at, 'status', e.status,
-            'coverImageUrl', e.cover_image_url, 'coverFit', e.cover_fit
-          ) as event
-        from mine o
-        join public.events e on e.id = o.event_id
-        order by o.created_at desc
-        limit p_limit offset p_offset
-      ) x
-    ), '[]'::jsonb)
-  );
+create or replace function public.buyer_refresh(p_refresh_hash text, p_token_hash text, p_new_refresh_hash text,
+                                                p_access_seconds integer)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_session public.buyer_sessions;
+  v_expires timestamptz := now() + make_interval(secs => p_access_seconds);
+begin
+  select * into v_session from public.buyer_sessions
+  where refresh_hash = p_refresh_hash and revoked_at is null and refresh_expires_at > now()
+  for update;
+  if v_session.id is null then
+    return jsonb_build_object('ok', false);
+  end if;
+
+  update public.buyer_sessions
+  set token_hash = p_token_hash, expires_at = v_expires, refresh_hash = p_new_refresh_hash
+  where id = v_session.id;
+  return jsonb_build_object('ok', true, 'buyerId', v_session.buyer_id, 'expiresAt', v_expires);
+end;
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -223,13 +208,13 @@ end;
 $$;
 
 revoke all on function public.buyer_otp_store(text, text, integer, integer) from public, anon, authenticated;
-revoke all on function public.buyer_otp_verify(text, text, text, integer, text, integer, boolean) from public, anon, authenticated;
-revoke all on function public.buyer_orders(uuid, text, public.order_status, integer, integer) from public, anon, authenticated;
+revoke all on function public.buyer_otp_verify(text, text, text, text, integer, integer, text, integer) from public, anon, authenticated;
+revoke all on function public.buyer_refresh(text, text, text, integer) from public, anon, authenticated;
 revoke all on function public.buyer_favorites(uuid) from public, anon, authenticated;
 revoke all on function public.set_event_like(text, text, boolean, uuid) from public, anon, authenticated;
 grant execute on function public.buyer_otp_store(text, text, integer, integer) to service_role;
-grant execute on function public.buyer_otp_verify(text, text, text, integer, text, integer, boolean) to service_role;
-grant execute on function public.buyer_orders(uuid, text, public.order_status, integer, integer) to service_role;
+grant execute on function public.buyer_otp_verify(text, text, text, text, integer, integer, text, integer) to service_role;
+grant execute on function public.buyer_refresh(text, text, text, integer) to service_role;
 grant execute on function public.buyer_favorites(uuid) to service_role;
 grant execute on function public.set_event_like(text, text, boolean, uuid) to service_role;
 
@@ -241,11 +226,11 @@ select cron.schedule(
     delete from public.rate_limits where window_start < now() - interval '1 hour';
     delete from public.staff_sessions where expires_at < now() - interval '7 days';
     delete from public.buyer_otps where expires_at < now() - interval '1 hour';
-    delete from public.buyer_sessions where expires_at < now() or revoked_at < now() - interval '7 days';
+    delete from public.buyer_sessions where refresh_expires_at < now() or revoked_at < now() - interval '7 days';
   $$
 );
 
--- Photo de la démo : les nouvelles colonnes (buyer_id) des commandes et likes déjà photographiés
+-- Photo de la démo : la nouvelle colonne (buyer_id) des likes déjà photographiés
 update demo.snapshot set rows = (
   select coalesce(jsonb_agg(jsonb_build_object('buyer_id', null) || r), '[]') from jsonb_array_elements(rows) r)
-where table_name in ('orders', 'event_likes');
+where table_name = 'event_likes';

@@ -8,6 +8,10 @@ export function bearerToken(header: string | undefined): string | null {
   return match ? match[1].trim() : null;
 }
 
+// Jeton opaque de 256 bits (sessions staff et acheteur) ; seule son empreinte est stockée
+export const randomToken = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
+
 export async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -57,21 +61,21 @@ export const requireStaff = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-// Session acheteur (compte par code e-mail) : jeton opaque, seule son empreinte est stockée.
+// Session acheteur (compte par téléphone) : jeton d'accès opaque, seule son empreinte est stockée.
 async function findBuyerSession(token: string) {
   const { data, error } = await admin
     .from("buyer_sessions")
-    .select("id, buyer_id, buyer:buyers ( email )")
+    .select("id, buyer_id, buyer:buyers ( phone )")
     .eq("token_hash", await sha256Hex(token))
     .is("revoked_at", null)
     .gt("expires_at", new Date().toISOString())
     .maybeSingle();
   if (error) throw fromDbError(error);
   // deno-lint-ignore no-explicit-any
-  return data ? { sessionId: data.id, buyerId: data.buyer_id, email: (data.buyer as any).email as string } : null;
+  return data ? { sessionId: data.id, buyerId: data.buyer_id, phone: (data.buyer as any).phone as string } : null;
 }
 
-const buyerExpired = () => unauthorized("Session acheteur invalide ou expirée, reconnectez-vous avec votre e-mail");
+const buyerExpired = () => unauthorized("Session acheteur invalide ou expirée, renouvelez-la ou reconnectez-vous");
 
 // Protège une route de l'espace acheteur
 export const requireBuyer = createMiddleware<AppEnv>(async (c, next) => {
@@ -83,7 +87,7 @@ export const requireBuyer = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-// Route publique qui rattache l'action au compte si l'acheteur est connecté (commande, like).
+// Route publique qui rattache l'action au compte si l'acheteur est connecté (likes).
 // Un jeton présent mais invalide est refusé (401) : le front sait qu'il doit reconnecter l'acheteur.
 export const optionalBuyer = createMiddleware<AppEnv>(async (c, next) => {
   const token = bearerToken(c.req.header("Authorization"));

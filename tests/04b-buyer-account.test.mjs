@@ -1,17 +1,16 @@
-// PRD v2 : compte acheteur par code e-mail (OTP), commandes et favoris.
-// Les e-mails de test sont en @example.com : l'API ne leur envoie jamais rien (domaine réservé).
-// Le code n'étant stocké qu'en empreinte, les tests posent un code connu directement en base.
+// PRD v2.1 §8.4 : compte acheteur par numéro de téléphone et code (devCode en démo), commandes et favoris.
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 import { api, buyTickets, cleanup, createOrganizer, createPublishedEvent, resetRateLimits, setup, sql, staffAccess } from "./helpers.mjs";
 
-const RUN = Date.now().toString(36);
-const emails = [];
-const newEmail = (label) => {
-  const e = `acheteur-${RUN}-${label}@example.com`;
-  emails.push(e);
-  return e;
+// Numéros fictifs uniques à chaque exécution, au format béninois à 10 chiffres (+229 01XXXXXXXX)
+const SEED = String(Date.now()).slice(-6);
+const phones = [];
+let n = 0;
+const newPhone = () => {
+  const p = `+22901${SEED}${String(n++).padStart(2, "0")}`;
+  phones.push(p);
+  return p;
 };
 
 before(async () => {
@@ -19,97 +18,112 @@ before(async () => {
   await resetRateLimits();
 });
 after(async () => {
-  await sql("delete from buyers where email = any($1)", [emails]);
-  await sql("delete from buyer_otps where email = any($1)", [emails]);
+  await sql("delete from buyers where phone = any($1)", [phones]);
+  await sql("delete from buyer_otps where phone = any($1)", [phones]);
   await cleanup();
 });
 
-const hash = (email, code) => createHash("sha256").update(`${email}:${code}`).digest("hex");
-async function setCode(email, code, { expiresIn = "10 minutes" } = {}) {
-  await sql(
-    `insert into buyer_otps (email, code_hash, expires_at) values ($1, $2, now() + $3::interval)
-     on conflict (email) do update set code_hash = excluded.code_hash, attempts = 0, expires_at = excluded.expires_at`,
-    [email, hash(email, code), expiresIn],
-  );
-}
-// La vérification est limitée à 10 essais/min par IP : ce fichier en fait davantage
-async function verify(email, code, extra = {}) {
+// Les limites (5 demandes et 10 vérifications par minute et par IP) sont dépassées par ce fichier
+async function request(phone) {
   await resetRateLimits();
-  return api("POST", "/buyer/otp/verify", { body: { email, code, ...extra } });
+  return api("POST", "/buyer/otp/request", { body: { phone } });
 }
-async function login(email, extra = {}) {
-  await setCode(email, "424242");
-  const r = await verify(email, "424242", extra);
+async function verify(phone, code, extra = {}) {
+  await resetRateLimits();
+  return api("POST", "/buyer/otp/verify", { body: { phone, code, ...extra } });
+}
+async function login(phone, extra = {}) {
+  const { devCode } = (await request(phone)).body;
+  const r = await verify(phone, devCode, extra);
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  return { token: r.body.session.token, buyer: r.body.buyer };
+  return { ...r.body.session, buyer: r.body.buyer };
 }
 
 describe("Compte acheteur : demande et vérification du code", () => {
-  test("demande : réponse identique pour tout e-mail, délai de 60 s entre deux envois, e-mail invalide refusé", async () => {
-    const email = newEmail("demande");
-    const r = await api("POST", "/buyer/otp/request", { body: { email: email.toUpperCase() } });
-    assert.deepEqual([r.status, r.body], [200, { sent: true, expiresInSeconds: 600, retryAfterSeconds: 60 }]);
-    const [{ n }] = await sql("select count(*)::int n from buyer_otps where email = $1", [email]);
-    assert.equal(n, 1, "e-mail normalisé en minuscules, code enregistré (empreinte)");
+  test("demande : devCode à 6 chiffres, numéro normalisé, 60 s entre deux codes, numéro invalide refusé", async () => {
+    const phone = newPhone();
+    const r = await request(`${phone.slice(0, 4)} ${phone.slice(4, 6)} ${phone.slice(6)}`); // avec espaces
+    assert.equal(r.status, 200);
+    assert.match(r.body.devCode, /^\d{6}$/);
+    assert.deepEqual([r.body.expiresInSeconds, r.body.retryAfterSeconds], [600, 60]);
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    const [{ code_hash }] = await sql("select code_hash from buyer_otps where phone = $1", [phone]);
+    assert.ok(code_hash.length === 64 && code_hash !== r.body.devCode, "code stocké en empreinte uniquement");
 
-    const again = await api("POST", "/buyer/otp/request", { body: { email } });
-    assert.deepEqual([again.status, again.body.error.code], [429, "OTP_COOLDOWN"]);
+    const again = await request(phone);
+    assert.deepEqual([again.status, again.body.error.code, again.body.error.field], [429, "RATE_LIMITED", "phone"]);
     assert.ok(Number(again.headers.get("retry-after")) > 0);
 
-    const bad = await api("POST", "/buyer/otp/request", { body: { email: "pas-un-email" } });
-    assert.deepEqual([bad.status, bad.body.error.field], [400, "email"]);
+    const bad = await request("0197");
+    assert.deepEqual([bad.status, bad.body.error.field], [400, "phone"]);
   });
 
-  test("plafond de 5 codes par heure et par e-mail (protège la boîte et le quota d'envoi)", async () => {
+  test("plafond de 5 codes par heure et par numéro", async () => {
     await resetRateLimits();
-    const email = newEmail("plafond");
-    const statuses = [];
+    const phone = newPhone();
+    const results = [];
     for (let i = 0; i < 6; i++) {
-      statuses.push((await api("POST", "/buyer/otp/request", { body: { email } })).status);
-      await sql("update buyer_otps set created_at = now() - interval '2 minutes' where email = $1", [email]); // saute le délai de 60 s
+      await sql("delete from rate_limits where key not like 'buyer-otp-phone:%'"); // garde seulement le compteur par numéro
+      const r = await api("POST", "/buyer/otp/request", { body: { phone } });
+      results.push([r.status, r.body.error?.code]);
+      await sql("update buyer_otps set created_at = now() - interval '2 minutes' where phone = $1", [phone]); // saute les 60 s
     }
-    assert.deepEqual(statuses, [200, 200, 200, 200, 200, 429]);
-    await resetRateLimits();
+    assert.deepEqual(results, [...Array(5).fill([200, undefined]), [429, "RATE_LIMITED"]]);
   });
 
-  test("vérification : essais restants, blocage après 5 erreurs, code expiré, code à usage unique", async () => {
-    const email = newEmail("verif");
-    await setCode(email, "123456");
-    let r = await verify(email, "000000");
+  test("vérification : essais restants, OTP_EXPIRED après 5 erreurs ou au-delà de 10 min, code à usage unique", async () => {
+    const phone = newPhone();
+    const { devCode } = (await request(phone)).body;
+    const wrong = devCode === "000000" ? "111111" : "000000";
+    let r = await verify(phone, wrong);
     assert.deepEqual([r.status, r.body.error.code, r.body.error.field], [401, "OTP_INVALID", "code"]);
     assert.match(r.body.error.message, /4 essais restants/);
-    for (let i = 0; i < 4; i++) r = await verify(email, "000000");
-    assert.deepEqual([r.status, r.body.error.code], [429, "OTP_TOO_MANY_ATTEMPTS"]);
-    r = await verify(email, "123456");
-    assert.equal(r.body.error.code, "OTP_TOO_MANY_ATTEMPTS", "même le bon code est refusé après 5 erreurs");
+    for (let i = 0; i < 4; i++) r = await verify(phone, wrong);
+    assert.deepEqual([r.status, r.body.error.code], [401, "OTP_EXPIRED"]);
+    assert.equal((await verify(phone, devCode)).body.error.code, "OTP_EXPIRED", "même le bon code est refusé après 5 erreurs");
 
-    await setCode(email, "123456", { expiresIn: "-1 minute" });
-    assert.equal((await verify(email, "123456")).body.error.code, "OTP_EXPIRED");
+    await sql("update buyer_otps set created_at = now() - interval '2 minutes' where phone = $1", [phone]);
+    const fresh = (await request(phone)).body.devCode;
+    await sql("update buyer_otps set expires_at = now() - interval '1 second' where phone = $1", [phone]);
+    assert.equal((await verify(phone, fresh)).body.error.code, "OTP_EXPIRED");
 
-    await setCode(email, "123456");
-    r = await verify(email, "123456");
+    await sql("delete from buyer_otps where phone = $1", [phone]);
+    const last = (await request(phone)).body.devCode;
+    r = await verify(phone, last);
     assert.equal(r.status, 200);
-    assert.match(r.body.session.token, /^[0-9a-f]{64}$/);
-    assert.equal((await verify(email, "123456")).body.error.code, "OTP_INVALID", "un code ne sert qu'une fois");
-    assert.equal((await verify(newEmail("inconnu"), "123456")).body.error.code, "OTP_INVALID", "aucun code demandé");
+    assert.equal((await verify(phone, last)).body.error.code, "OTP_INVALID", "un code ne sert qu'une fois");
   });
 
-  test("compte créé à la première connexion, retrouvé ensuite ; seules les empreintes sont stockées", async () => {
-    const email = newEmail("compte");
-    const first = await login(email);
-    const second = await login(email);
-    assert.equal(first.buyer.id, second.buyer.id);
-    assert.deepEqual([first.buyer.email, first.buyer.name, first.buyer.phone], [email, null, null]);
-    const rows = await sql("select token_hash from buyer_sessions where buyer_id = $1", [first.buyer.id]);
-    assert.equal(rows.length, 2);
-    assert.ok(!rows.some((x) => x.token_hash === first.token), "jeton stocké en empreinte uniquement");
+  test("session au format organisateur, renouvelable par /auth/refresh (rotation) ; compte retrouvé ensuite", async () => {
+    const phone = newPhone();
+    const s = await login(phone);
+    assert.deepEqual(Object.keys(s.buyer).sort(), ["createdAt", "id", "name", "phone"]);
+    assert.deepEqual([s.buyer.phone, s.buyer.name], [phone, null]);
+    assert.deepEqual([s.tokenType, s.expiresIn], ["bearer", 3600]);
+    assert.match(s.accessToken, /^[0-9a-f]{64}$/);
+    assert.match(s.refreshToken, /^[0-9a-f]{64}$/);
+
+    await resetRateLimits();
+    const r = await api("POST", "/auth/refresh", { body: { refreshToken: s.refreshToken } });
+    assert.equal(r.status, 200);
+    const renewed = r.body.session;
+    assert.notEqual(renewed.accessToken, s.accessToken);
+    assert.equal((await api("GET", "/buyer/me", { token: renewed.accessToken })).status, 200);
+    assert.equal((await api("GET", "/buyer/me", { token: s.accessToken })).status, 401, "l'ancien jeton d'accès ne marche plus");
+    assert.equal((await api("POST", "/auth/refresh", { body: { refreshToken: s.refreshToken } })).body.error.code,
+      "INVALID_REFRESH_TOKEN", "un jeton de renouvellement ne sert qu'une fois");
+
+    // Jeton d'accès expiré → 401, le front renouvelle
+    await sql("update buyer_sessions set expires_at = now() - interval '1 second' where buyer_id = $1", [s.buyer.id]);
+    assert.equal((await api("GET", "/buyer/me", { token: renewed.accessToken })).status, 401);
+
+    const again = await login(phone);
+    assert.equal(again.buyer.id, s.buyer.id, "même compte à la connexion suivante");
   });
 
-  test("compte de démonstration : code fixe, aucun code envoyé", async () => {
-    const r = await api("POST", "/buyer/otp/request", { body: { email: "acheteur@ticketo.bj" } });
-    assert.equal(r.body.demo, true);
-    assert.equal((await verify("acheteur@ticketo.bj", "246810")).status, 200);
-    assert.equal((await verify("acheteur@ticketo.bj", "111111")).body.error.code, "OTP_INVALID");
+  test("devCode désactivable (BUYER_OTP_DEV_CODE=off) : documenté, activé par défaut en démo", async () => {
+    const r = await request(newPhone());
+    assert.ok("devCode" in r.body);
   });
 });
 
@@ -118,12 +132,12 @@ describe("Compte acheteur : session, commandes et favoris", () => {
   before(async () => {
     await resetRateLimits();
     orga = await createOrganizer("acheteur");
-    ev1 = await createPublishedEvent(orga.token, { name: `Soirée acheteur ${RUN}` });
-    ev2 = await createPublishedEvent(orga.token, { name: `Concert acheteur ${RUN}`, category: "CONCERT" });
+    ev1 = await createPublishedEvent(orga.token, { name: `Soirée acheteur ${SEED}` });
+    ev2 = await createPublishedEvent(orga.token, { name: `Concert acheteur ${SEED}`, category: "CONCERT" });
   });
 
   test("profil et déconnexion ; chaque jeton n'ouvre que son espace", async () => {
-    const { token } = await login(newEmail("session"));
+    const { accessToken: token } = await login(newPhone());
     assert.equal((await api("GET", "/buyer/me", { token })).status, 200);
     assert.equal((await api("GET", "/events", { token })).status, 401, "jeton acheteur refusé côté organisateur");
     assert.equal((await api("GET", "/buyer/me", { token: orga.token })).status, 401, "jeton organisateur refusé côté acheteur");
@@ -135,59 +149,45 @@ describe("Compte acheteur : session, commandes et favoris", () => {
     assert.equal((await api("GET", "/buyer/me", { token })).status, 401, "déconnexion immédiate");
   });
 
-  test("commandes : celles passées avec l'e-mail avant le compte + celles passées connecté ; profil pré-rempli", async () => {
-    const email = newEmail("commandes");
-    const before = await buyTickets(ev1.slug, [{ categoryId: ev1.categories[0].id, quantity: 2 }],
-      { name: "Aïcha K.", phone: "+22997000001", email, provider: "mtn" });
-    const other = await buyTickets(ev1.slug, [{ categoryId: ev1.categories[0].id, quantity: 1 }],
-      { name: "Autre", phone: "+22997000002", email: newEmail("autre"), provider: "mtn" });
+  test("commandes payées avec ce numéro, sur n'importe quel appareil, au format de GET /orders/:id ; nom repris", async () => {
+    const phone = newPhone();
+    const paid = await buyTickets(ev1.slug, [{ categoryId: ev1.categories[0].id, quantity: 2 }], { name: "Aïcha K.", phone, provider: "mtn" });
+    const paid2 = await buyTickets(ev2.slug, [{ categoryId: ev2.categories[0].id, quantity: 1 }],
+      { name: "Aïcha Kpèdé", phone: `${phone.slice(0, 4)} ${phone.slice(4)}`, provider: "moov" }); // même numéro, autre saisie
+    await api("POST", "/orders", { body: { eventSlug: ev1.slug, items: [{ categoryId: ev1.categories[0].id, quantity: 1 }], buyer: { name: "Aïcha", phone, provider: "mtn" } } }); // non payée
+    await buyTickets(ev1.slug, [{ categoryId: ev1.categories[0].id, quantity: 1 }], { name: "Autre", phone: newPhone(), provider: "mtn" });
 
-    const { token, buyer } = await login(email);
-    // Connecté, sans e-mail dans le formulaire : l'e-mail du compte est utilisé
-    const r = await api("POST", "/orders", {
-      token,
-      body: { eventSlug: ev2.slug, items: [{ categoryId: ev2.categories[0].id, quantity: 1 }], buyer: { name: "Aïcha Kpèdé", phone: "+229 96 00 00 03", provider: "moov" } },
-    });
-    assert.equal(r.status, 201);
-    assert.equal(r.body.order.buyerEmail, email);
-    const [{ buyer_id }] = await sql("select buyer_id from orders where id = $1", [r.body.order.id]);
-    assert.equal(buyer_id, buyer.id);
-
-    const me = (await api("GET", "/buyer/me", { token })).body.buyer;
-    assert.deepEqual([me.name, me.phone], ["Aïcha Kpèdé", "+22996000003"], "dernier nom et numéro : pré-remplissage du formulaire");
-
-    const list = (await api("GET", "/buyer/orders", { token })).body;
-    assert.deepEqual(list.orders.map((o) => o.id), [r.body.order.id, before.order.id], "la plus récente d'abord");
-    assert.ok(!list.orders.some((o) => o.id === other.order.id), "aucune commande d'un autre acheteur");
-    const paid = list.orders[1];
-    assert.deepEqual([paid.status, paid.ticketCount, paid.summary, paid.event.slug, paid.event.timeZone], ["PAID", 2, "2× Standard", ev1.slug, "Africa/Porto-Novo"]);
-
-    const onlyPaid = (await api("GET", "/buyer/orders?status=PAID", { token })).body;
-    assert.deepEqual([onlyPaid.pagination.total, onlyPaid.orders[0].id], [1, before.order.id]);
-    const page2 = (await api("GET", "/buyer/orders?pageSize=1&page=2", { token })).body;
-    assert.deepEqual([page2.orders.length, page2.pagination.totalPages], [1, 2]);
-  });
-
-  test("jeton acheteur invalide sur une route publique → 401 (le front reconnecte l'acheteur)", async () => {
-    const r = await api("POST", "/orders", { token: "f".repeat(64), body: { eventSlug: ev1.slug } });
-    assert.equal(r.status, 401);
+    const s = await login(phone);
+    assert.equal(s.buyer.name, "Aïcha Kpèdé", "nom de la dernière commande payée");
+    const { orders } = (await api("GET", "/buyer/orders", { token: s.accessToken })).body;
+    assert.deepEqual(orders.map((o) => o.order.id), [paid2.order.id, paid.order.id], "payées seulement, la plus récente d'abord");
+    const same = (await api("GET", `/orders/${paid.order.id}`)).body;
+    assert.deepEqual(orders[1], { order: same.order, tickets: same.tickets }, "même format que GET /orders/:id");
+    assert.equal(orders[1].tickets.length, 2);
   });
 
   test("favoris : likes de l'appareil rattachés à la connexion, likes connectés depuis un autre appareil, retrait", async () => {
-    const email = newEmail("favoris");
     await api("POST", `/public/events/${ev1.slug}/like`, { body: { deviceId: "telephone-aicha-01" } }); // avant connexion
-    const { token } = await login(email, { deviceId: "telephone-aicha-01" });
+    const { accessToken: token } = await login(newPhone(), { deviceId: "telephone-aicha-01" });
     await api("POST", `/public/events/${ev2.slug}/like`, { token, body: { deviceId: "ordinateur-aicha-02" } });
 
     let fav = (await api("GET", "/buyer/favorites", { token })).body.events;
-    assert.deepEqual(new Set(fav.map((e) => e.id)), new Set([ev1.id, ev2.id]));
-    assert.ok(fav.every((e) => e.isLiked && e.likesCount >= 1 && "minPriceFcfa" in e && "isSalesOpen" in e));
+    assert.deepEqual(new Set(fav.map((e) => e.slug)), new Set([ev1.slug, ev2.slug]));
+    assert.ok(fav.every((e) => e.isLiked && e.likesCount >= 1 && "minPriceFcfa" in e && "coverFit" in e));
+
+    // Cœurs pleins sur un nouvel appareil : GET /public/likes avec le jeton inclut les likes du compte
+    const slugs = (await api("GET", "/public/likes?deviceId=tablette-aicha-03", { token })).body.slugs;
+    assert.deepEqual(new Set(slugs), new Set([ev1.slug, ev2.slug]));
 
     // Retrait depuis un autre appareil que celui du like : le favori disparaît quand même
     const r = await api("DELETE", `/public/events/${ev1.slug}/like?deviceId=tablette-aicha-03`, { token });
     assert.equal(r.body.liked, false);
     fav = (await api("GET", "/buyer/favorites", { token })).body.events;
-    assert.deepEqual(fav.map((e) => e.id), [ev2.id]);
-    assert.equal((await api("GET", `/public/events/${ev1.slug}?deviceId=telephone-aicha-01`)).body.event.likesCount, 0);
+    assert.deepEqual(fav.map((e) => e.slug), [ev2.slug]);
+  });
+
+  test("jeton acheteur invalide sur un like → 401 (le front renouvelle ou reconnecte)", async () => {
+    const r = await api("POST", `/public/events/${ev1.slug}/like`, { token: "f".repeat(64), body: { deviceId: "appareil-x-0001" } });
+    assert.equal(r.status, 401);
   });
 });

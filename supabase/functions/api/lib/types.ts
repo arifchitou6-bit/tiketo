@@ -14,7 +14,7 @@ export interface StaffSession {
 export interface BuyerSession {
   sessionId: string;
   buyerId: string;
-  email: string;
+  phone: string;
 }
 
 // Variables de contexte Hono partagées par toutes les routes

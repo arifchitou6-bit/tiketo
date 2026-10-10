@@ -194,12 +194,12 @@ Toutes ces routes renvoient **`404 NOT_FOUND`** si l'événement n'existe pas **
 
 | Champ (PRD v2) | Valeurs | Défaut |
 |---|---|---|
-| `category` | `CONCERT`, `SOIREE`, `FESTIVAL`, `CONFERENCE`, `THEATRE`, `EXPOSITION` | `SOIREE` |
-| `country` | code pays ISO 3166-1 à 2 lettres (`BJ`, `TG`, `CI`…), minuscules acceptées | `BJ` |
-| `timeZone` | fuseau IANA (`Africa/Porto-Novo`, `Africa/Lome`…) : pour afficher l'heure locale du lieu | `Africa/Porto-Novo` |
+| `category` | `CONCERT`, `SOIREE`, `FESTIVAL`, `CONFERENCE`, `THEATRE`, `EXPOSITION` | `null` (obligatoire pour publier) |
+| `country` | `BJ` ou `CI`, minuscules acceptées | `BJ` |
+| `timeZone` | fuseau IANA : pour afficher l'heure locale du lieu | déduit du pays |
 | `coverFit` | `cover` (l'image remplit le cadre, rognée) ou `contain` (image entière) — à passer en `object-fit` | `cover` |
 | `likesCount` | nombre de likes (lecture seule) | `0` |
-| `categories[].description` | texte libre, 300 caractères max | `""` |
+| `categories[].description` | texte libre, 80 caractères max | `""` |
 
 #### `GET /events` 🔑 — US-02 (liste du dashboard)
 
@@ -239,14 +239,17 @@ Triés par date de début décroissante. Liste vide → `{ "events": [] }` (éta
 
 | Champ | Règle |
 |---|---|
-| `name` | 2 à 140 caractères |
+| `name` | **seul champ obligatoire** (brouillon), 2 à 140 caractères |
 | `description` | optionnelle, 10 000 caractères max |
-| `venue` / `city` | obligatoires (160 / 80 caractères max) |
-| `startsAt` / `endsAt` | ISO 8601, `endsAt` après `startsAt` |
+| `venue` / `city` | facultatifs en brouillon, **obligatoires pour publier** (160 / 80 caractères max) |
+| `startsAt` / `endsAt` | ISO 8601, `endsAt` après `startsAt` ; facultatifs en brouillon, obligatoires pour publier |
 | `coverImageUrl` | optionnelle, URL (voir [upload](#44-upload-dimage)) |
-| `category`, `country`, `timeZone`, `coverFit` | optionnels (valeurs et défauts : voir l'objet `event` ci-dessus) |
-| `categories[].description` | optionnelle, 300 caractères max |
-| `categories` | 1 à 10, noms uniques (insensible à la casse) |
+| `category` | facultative en brouillon (`null`), **obligatoire pour publier** |
+| `country` | `BJ` ou `CI` (défaut `BJ`) |
+| `timeZone` | facultatif : **déduit du pays** (`BJ` → `Africa/Porto-Novo`, `CI` → `Africa/Abidjan`), y compris quand le pays change en `PATCH` |
+| `coverFit` | `cover` ou `contain` (défaut `cover`) |
+| `categories[].description` | optionnelle, **80 caractères max** (« Accès fosse », « Tribune VIP + boisson ») |
+| `categories` | 0 à 10 en brouillon (au moins 1 pour publier, et un événement publié en garde au moins 1), noms uniques (insensible à la casse) |
 | `priceFcfa` | entier 0 à 10 000 000 |
 | `quantity` | entier 1 à 100 000 |
 
@@ -295,7 +298,9 @@ Erreurs : `400` (aucun champ / validation), `409 QUANTITY_BELOW_SOLD` (quantité
 }
 ```
 
-`publicUrl` est le lien à copier en un clic. Idempotent (republier ne fait rien). Erreurs : `409 EVENT_ENDED` (`field: "endsAt"`), `409 EVENT_CLOSED`, `422 NO_CATEGORY`.
+`publicUrl` est le lien à copier en un clic. Idempotent (republier ne fait rien).
+
+Avant de publier, l'API vérifie que tout est rempli et signale **un champ manquant à la fois**, avec un message prêt à afficher : `400 VALIDATION_ERROR` avec `field` = `category` (« Choisissez une catégorie avant de publier »), `venue`, `city`, `startsAt` ou `endsAt` ; puis `422 NO_CATEGORY` (`field: "categories"`, aucune catégorie de tickets). Autres erreurs : `409 EVENT_ENDED` (`field: "endsAt"`), `409 EVENT_CLOSED`.
 
 #### `POST /events/:id/close` 🔑
 
@@ -834,7 +839,7 @@ Dans un lot, les scans sont traités par `scannedAt` croissant. Entre appareils,
 | Demande | Implémentation | Choix faits sans le document v2 (à confirmer) |
 |---|---|---|
 | `GET /public/events?q=&category=&sort=popular\|date&cursor=&country=` | Conforme au PRD v2.1 §8.1, + `deviceId` (`isLiked`) | — |
-| `category` sur les événements | 6 valeurs, défaut `SOIREE` | Optionnel à la création (compatibilité) |
+| `category` sur les événements | Conforme au PRD v2.1 §8.5 : `null` en brouillon, obligatoire pour publier | — |
 | Likes : `likesCount`, `POST`/`DELETE /public/events/:slug/like`, `GET /public/likes` | Conforme au PRD v2.1 §8.3 | + `isLiked` avec `?deviceId=` |
-| `country`, `timeZone`, `coverFit`, `description` des catégories | Implémentés | ISO 2 lettres, fuseau IANA, `cover`\|`contain`, 300 caractères |
+| `country`, `timeZone`, `coverFit`, `description` des catégories | Conformes au PRD v2.1 §7 et §8.5 | Fuseau déduit du pays |
 | Compte acheteur (`/buyer/...`) | Conforme au PRD v2.1 §8.4 (§4.10) | Code bloqué après 5 erreurs → `OTP_EXPIRED` ; `accessToken` 1 h, `refreshToken` 30 jours |

@@ -10,6 +10,7 @@ Ce dépôt contient le **backend complet**, déployé sur **Supabase** : base Po
 
 | | |
 |---|---|
+| **Application (front, Jude)** | https://ticketo-app-ticketo-app.vercel.app |
 | **API (production)** | `https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api` |
 | Vérification | [`/health`](https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api/health) |
 | Documentation | [docs/API.md](docs/API.md) |

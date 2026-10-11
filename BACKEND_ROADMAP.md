@@ -131,7 +131,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [x] Projet Supabase de production : « arifchitou6-bit's Project » (ref yedvgoroseersrjyyfol), organisation personnelle « Tiketo », région eu-west-3 — mot de passe dans .env.production.local (exclu de git)
 - [x] `supabase link --project-ref yedvgoroseersrjyyfol` — base en ligne vérifiée vide avant déploiement
 - [x] `supabase db push` — 16 migrations appliquées en production
-- [~] Secrets : configuration TEMPORAIRE (`PUBLIC_APP_URL=http://localhost:3000`, `ALLOWED_ORIGINS` non défini = toutes origines) — à remplacer par l'adresse Vercel du front
+- [x] Secrets définitifs (11 octobre) : `PUBLIC_APP_URL=https://ticketo-app-ticketo-app.vercel.app`, `ALLOWED_ORIGINS=https://ticketo-app-ticketo-app.vercel.app,http://localhost:3000` (localhost : développement du front)
 - [x] `supabase functions deploy api` — https://yedvgoroseersrjyyfol.supabase.co/functions/v1/api (health OK)
 - [x] Vérifier que pg_cron est actif et que le bucket Storage existe en production (2 tâches actives, bucket event-covers, 0 droit d'écriture directe)
 - [x] Désactiver l'inscription publique dans le tableau de bord — vérifié : inscription directe → 422 signup_disabled, inscription via l'API → 201 (Auth > Sign In / Providers > « Allow new users to sign up » : NON) — équivalent de `enable_signup = false`
@@ -141,9 +141,9 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [x] Vérifier que le projet utilise des clés de signature JWT asymétriques — ES256 ✔ (Auth > JWT Keys) : sinon `getClaims()` repasse par le service Auth à chaque requête (correct mais plus lent)
 - [x] Vérifier la détection de l'IP client en production — faux X-Forwarded-For toujours bloqué ✔ (rate limiting) : envoyer un faux `X-Forwarded-For` ne doit pas changer de compteur
 - [x] Tester l'upload réel d'une couverture — enregistrement Storage + URL publique accessible ✔
-- [ ] Vérifier le CORS en production : seules les origines `ALLOWED_ORIGINS` sont acceptées (en local, la passerelle Kong force `*`)
+- [x] Vérifier le CORS en production : seules les origines `ALLOWED_ORIGINS` sont acceptées — site Vercel et localhost:3000 acceptés, origine inconnue sans en-tête CORS (refusée par le navigateur) ✔ ; lien de partage renvoyé : https://ticketo-app-ticketo-app.vercel.app/events/afro-night-cotonou-3hhi ✔
 - [x] README backend pro + DECISIONS.md (18 décisions) — URL de production et comptes de démo ajoutés
-- [~] Transmettre au front (Jude) l'URL de base de l'API (message prêt, envoi par Arif ; la clé anon n'est pas nécessaire : tout passe par l'API)
+- [x] Transmettre au front (Jude) l'URL de base de l'API — Jude l'utilise (retour du 9 octobre, front en ligne sur Vercel) ; la clé anon n'est pas nécessaire : tout passe par l'API
 
 ## PHASE 9 — Retours de Jude (PRD v2) et démo
 

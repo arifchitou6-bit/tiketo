@@ -141,6 +141,7 @@ Les détails sont dans [DECISIONS.md](DECISIONS.md).
 - [x] Vérifier que le projet utilise des clés de signature JWT asymétriques — ES256 ✔ (Auth > JWT Keys) : sinon `getClaims()` repasse par le service Auth à chaque requête (correct mais plus lent)
 - [x] Vérifier la détection de l'IP client en production — faux X-Forwarded-For toujours bloqué ✔ (rate limiting) : envoyer un faux `X-Forwarded-For` ne doit pas changer de compteur
 - [x] Tester l'upload réel d'une couverture — enregistrement Storage + URL publique accessible ✔
+- [x] CORS étendu à la demande de Jude (17 octobre) : motifs « * » (un segment, sans point) — prévisualisations `https://ticketo-app-*-ticketo-app.vercel.app`, `https://ticketo-api.vercel.app` (adresse à confirmer par Jude), réseau local `http://192.168.*.*:3000` et `http://10.*.*.*:3000` ; vérifié en production : 7 origines acceptées, 3 tentatives de contournement refusées
 - [x] Vérifier le CORS en production : seules les origines `ALLOWED_ORIGINS` sont acceptées — site Vercel et localhost:3000 acceptés, origine inconnue sans en-tête CORS (refusée par le navigateur) ✔ ; lien de partage renvoyé : https://ticketo-app-ticketo-app.vercel.app/events/afro-night-cotonou-3hhi ✔
 - [x] README backend pro + DECISIONS.md (18 décisions) — URL de production et comptes de démo ajoutés
 - [x] Transmettre au front (Jude) l'URL de base de l'API — Jude l'utilise (retour du 9 octobre, front en ligne sur Vercel) ; la clé anon n'est pas nécessaire : tout passe par l'API

@@ -26,5 +26,14 @@ export const env = {
   // Adresse du front : sert à construire les liens publics renvoyés par l'API (page événement…).
   publicAppUrl: (Deno.env.get("PUBLIC_APP_URL") ?? "http://localhost:3000").replace(/\/$/, ""),
   // Origines autorisées à appeler l'API (CORS). Vide = toutes (développement uniquement).
+  // Une entrée peut contenir « * » : un seul segment (lettres, chiffres, tirets, jamais de point),
+  // ex. https://ticketo-app-*-ticketo-app.vercel.app (prévisualisations Vercel du projet)
+  // ou http://192.168.*.*:3000 (test sur téléphone par le réseau local).
   allowedOrigins: list(Deno.env.get("ALLOWED_ORIGINS")),
 };
+
+const originPatterns = env.allowedOrigins.map((entry) =>
+  new RegExp(`^${entry.replace(/[.+?^${}()|[\]\\/]/g, "\\$&").replace(/\*/g, "[a-z0-9-]+")}$`, "i")
+);
+
+export const isOriginAllowed = (origin: string) => originPatterns.some((re) => re.test(origin));

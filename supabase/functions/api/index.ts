@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { rejectIfTooLarge } from "./lib/body.ts";
-import { env } from "./lib/env.ts";
+import { env, isOriginAllowed } from "./lib/env.ts";
 import { ApiError, errorResponse } from "./lib/errors.ts";
 import { admin } from "./lib/supabase.ts";
 import type { AppEnv } from "./lib/types.ts";
@@ -27,7 +27,7 @@ app.use(
   cors({
     origin: (origin) => {
       if (env.allowedOrigins.length === 0) return origin || "*";
-      return env.allowedOrigins.includes(origin) ? origin : null;
+      return isOriginAllowed(origin) ? origin : null;
     },
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Authorization", "Content-Type"],

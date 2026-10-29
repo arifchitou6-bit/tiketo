@@ -53,7 +53,7 @@ Comptes de démo : voir `node scripts/seed-demo.mjs` (affiche identifiants, code
 | Erreurs | Toujours `{ "error": { "code", "message", "field"? } }` — voir [§5](#5-codes-derreur). Messages **toujours en français** |
 | Taille | Corps JSON limité à **1 Mo** (`413 PAYLOAD_TOO_LARGE`) ; images : 5 Mo |
 | Méthodes | Méthode non prévue sur une route existante → `405 METHOD_NOT_ALLOWED` + en-tête `Allow` (ex. `PUT /events` → `Allow: GET, POST`) |
-| Origines (CORS) | `https://ticketo-app-ticketo-app.vercel.app`, prévisualisations `https://ticketo-app-*-ticketo-app.vercel.app`, `https://ticketo-api.vercel.app`, `http://localhost:3000`, réseau local `http://192.168.*.*:3000` et `http://10.*.*.*:3000` (test sur téléphone). Toute autre origine est refusée par le navigateur |
+| Origines (CORS) | `https://ticketo-app-ticketo-app.vercel.app`, prévisualisations `https://ticketo-app-*-ticketo-app.vercel.app`, `https://ticketo-api-green.vercel.app` (site de test de Jude) et ses prévisualisations `https://ticketo-api-*-judeskpparadox-6717s-projects.vercel.app`, `http://localhost:3000`, réseau local `http://192.168.*.*:3000` et `http://10.*.*.*:3000` (test sur téléphone). Toute autre origine est refusée par le navigateur |
 | Fuseau | Afficher les dates dans `event.timeZone` (heure du lieu), présent sur l'événement, la commande et la connexion staff |
 
 Exemple d'erreur de validation :
